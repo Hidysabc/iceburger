@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y git-core && \
     rm -rf /var/apt/lists/*
 
 
-RUN pip install keras pandas h5py && \
+RUN pip install keras pandas h5py versioneer && \
     pip install boto3 && \
     rm -rf /root/.cache/pip/*
 
