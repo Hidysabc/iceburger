@@ -27,20 +27,10 @@ logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
-PRJ = "/workspace/iceburger"
+PRJ = "/iceburger"
 DATA = os.path.join(PRJ, "data/processed")
 
-def get_augmentation_params(args):
-    """
-    Create augmentation parmas to feed into data generators for data augmentation
-    : param args: arguments as parsed by argparse module
-    : returns: 'dict' of augmentation parameters
-    """
-    augparams = {}
-    augparams["rotation_angle"] = args.daug_rotation
-    augparams["permutation_segments"] = args.daug_permutation_segments
-    augparams["scale"] = args.daug_scaling
-    return augparams
+
 
 def get_callbacks(args,model_out_path):
     """
@@ -48,7 +38,7 @@ def get_callbacks(args,model_out_path):
     :param args: arguments as parsed by argparse module
     :returns: `list` of `keras.callbacks` classes
     """
-    checkpoint_name= "{mn}-best_val_loss_weights.hdf5".format(mn=args.model)
+    checkpoint_name= "{mn}-best_val_loss_weights.hdf5".format(mn="fcn")
     callbacks = []
     #outpath = args.outpath
 
@@ -62,38 +52,25 @@ def get_callbacks(args,model_out_path):
             save_weights_only=True
         )
     )
-    if args.cb_earlystop:
             # stop training earlier if the model is not improving
-        callbacks.append(
-            EarlyStopping(
-                monitor="val_loss",
-                patience=args.cb_early_stop,
-                verbose=1, mode='auto'
-            )
+    callbacks.append(
+        EarlyStopping(
+            monitor="val_loss",
+            patience=10,
+            verbose=1, mode='auto'
         )
-    if args.cb_reduce_lr:
-        callbacks.append(
-            ReduceLROnPlateau(
-                monitor="val_loss",
-                factor=args.cb_reduce_lr_factor,
-                patience=10,
-                min_lr=1e-8
-            )
+    )
+    callbacks.append(
+        ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=10,
+            min_lr=1e-8
         )
+    )
 
     return callbacks, checkpoint_name
 
-def save_model(model, fileroot):
-    """Save model architecture and weights to files
-
-    :param model: trained :class: 'keras.models.Model'
-    :param fileroot: base file root name
-    """
-    model_json = model.to_json
-    with open(fileroot+ "-iceburger.json", "w") as json_file:
-        json_file.write(model_json)
-
-    model.save_weights(fileroot + "-weights.hdf5")
 
 def compile_model(args, input_shape):
     """Build and compile model
@@ -101,26 +78,22 @@ def compile_model(args, input_shape):
     :param args: arguments as parsed by argparse module
     :returns: `keras.models.Model` of compiled model
     """
-    if args.model.lower()=="resnet50":
-        base_model = ResNet50(weights=args.weights, include_top=False,
-                              input_shape=input_shape)
-        x = base_model.output
-        x = GlobalAveragePooling2D()(x)
-        x = Dense(1024, activation='relu')(x)
-        x = Dropout(0.5)(x)
-        x = Dense(512, activation='relu')(x)
-        x = Dropout(0.5)(x)
-        predictions = Dense(1, activation='sigmoid')(x)
-        model = Model(inputs=base_model.input, outputs=predictions)
-        optimizer = SGD(lr = 0.0001, momentum = 0.9)
-        #for layer in base_model.layers:
-        #    layer.trainable = False
-        for layer in model.layers[:15]:
-            layer.trainable = False
-        for layer in model.layers[15:]:
-            layer.trainable = True
-    else:
-        LOG.err("Unknown model name: {}".format(args.model))
+    base_model = ResNet50(include_top=False, input_shape=input_shape)
+    x = base_model.output
+    x = GlobalAveragePooling2D()(x)
+    x = Dense(1024, activation='relu')(x)
+    x = Dropout(0.5)(x)
+    x = Dense(512, activation='relu')(x)
+    x = Dropout(0.5)(x)
+    predictions = Dense(1, activation='sigmoid')(x)
+    model = Model(inputs=base_model.input, outputs=predictions)
+    optimizer = SGD(lr = 0.0001, momentum = 0.9)
+    #for layer in base_model.layers:
+    #    layer.trainable = False
+    for layer in model.layers[:15]:
+        layer.trainable = False
+    for layer in model.layers[15:]:
+        layer.trainable = True
 
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy',
@@ -133,7 +106,6 @@ def train(args):
 
     :param args: arguments as parsed by argparse module
     """
-    LOG.info("Loading data from {}".format(args.data))
     X, X_angle, y, subset = parse_json_data(os.path.join(DATA, "train_valid.json"))
     w = 197
     h = 197
@@ -147,7 +119,6 @@ def train(args):
     #nb_classes = ds.df.activity.nunique()
 
     LOG.info("Create generators")
-    augmentation_params = get_augmentation_params(args)
     #input_length = pd.Timedelta(args.window_time_s, "s")
 
     LOG.info("Initiate model")
@@ -181,8 +152,10 @@ def train(args):
             X1i = genX1.next()
             yield X1i[0], X1i[1]
     #Finally create out generator
-    gen_train = gen_flow_train_for_one_input(X_train, y_train)
-    gen_valid = gen_flow_valid_for_one_input(X_valid, y_valid)
+    #gen_train_ = gen_flow_train_for_one_input(X_train, y_train)
+    #gen_valid_ = gen_flow_valid_for_one_input(X_valid, y_valid)
+    gen_train_ = gen_train.flow(X_train, y_train)
+    gen_valid_ = gen_valid.flow(X_valid, y_valid)
 
     """
     gen_train = ds.get_generator(batch_size=args.batch_size,subset="train",
@@ -203,11 +176,11 @@ def train(args):
 
     LOG.info("Start training ...")
     history = model.fit_generator(
-        gen_train,
-        samples_per_epoch=args.train_steps * args.batch_size,
-        nb_epoch=args.epochs, verbose=1,
-        validation_data=gen_valid,
-        nb_val_samples=args.valid_steps * args.batch_size,
+        gen_train_,
+        steps_per_epoch=args.train_steps,
+        epochs=args.epochs, verbose=1,
+        validation_data=gen_valid_,
+        validation_steps=args.valid_steps,
         callbacks=callbacks)
 
     best_idx = np.argmin(history.history['val_loss'])
@@ -220,7 +193,7 @@ def train(args):
     )
 
     best_model_name = "{mn}-best-{val_loss:.4f}-{val_acc:.4f}-weights.hdf5".format(
-        mn=args.model,
+        mn="fcn",
         val_loss=history.history["val_loss"][best_idx],
         val_acc=history.history["val_acc"][best_idx]
     )
@@ -239,7 +212,7 @@ def train(args):
     )
 
     final_file_root = "{mn}-{val_loss:.4f}-{val_acc:.4f}".format(
-        mn=args.model,
+        mn="fcn",
         val_loss=history.history["val_loss"][-1],
         val_acc=history.history["val_acc"][-1]
     )
@@ -249,24 +222,11 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
-        "model", type=str, metavar="MODEL",
-        help="Model type for training (Options: resnet50)")
-    parser.add_argument(
-        "data", type=str, metavar="DATA",
-        help=("Path to training pickle data, as stored in"
-              " `swhar.datasets.DataSet` class"))
-    parser.add_argument(
-        "--weights", type=str, metavar="WEIGHTS",
-        help="Path to previously saved weights")
-    parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
     parser.add_argument(
         "--epochs", type=int, metavar="EPOCHS", default=1000,
         help="Number of epochs")
-    parser.add_argument(
-        "--acc_only", action="store_true",
-        help="Whether to train the model using only accelerometer")
     parser.add_argument(
         "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
         help=("Number of mini-batches for each epoch to pass through during"
@@ -275,25 +235,6 @@ def main():
         "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
         help=("Number of mini-batches for each epoch to pass through during"
               " validation"))
-    parser.add_argument(
-        "--daug_rotation", type=float,
-        help="Data augmentation: maximum rotation angle")
-    parser.add_argument(
-        "--daug_permutation_segments", type=int,
-        help="Data augmentation: maximum number of permutation segments")
-    parser.add_argument(
-        "--daug_scaling", type=float,
-        help="Data augmentation: maximum scaling factor")
-    parser.add_argument(
-        "--cb_early_stop", type=int, metavar="PATIENCE",
-        help="Number of epochs for early stop if without improvement")
-    parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU",
-        help="Number of epochs to reduce learning rate without improvement")
-    parser.add_argument(
-        "--cb_reduce_lr_factor", type=float, metavar="ALPHA",
-        help=("Factor for reducing learning rate. Only activated when"
-              " `cb_reduce_lr` is set"))
     parser.add_argument(
         "--outpath", type=str, metavar="OUTPATH",
         default="./",
