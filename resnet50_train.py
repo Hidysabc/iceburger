@@ -52,23 +52,24 @@ def get_callbacks(args,model_out_path):
             save_weights_only=True
         )
     )
-            # stop training earlier if the model is not improving
-    callbacks.append(
-        EarlyStopping(
-            monitor="val_loss",
-            patience=10,
-            verbose=1, mode='auto'
+    if args.cb_early_stop:
+    # stop training earlier if the model is not improving
+        callbacks.append(
+            EarlyStopping(
+                monitor="val_loss",
+                patience=args.cb_early_stop,
+                verbose=1, mode='auto'
+            )
         )
-    )
-    callbacks.append(
-        ReduceLROnPlateau(
-            monitor="val_loss",
-            factor=0.5,
-            patience=10,
-            min_lr=1e-8
+    if args.cb_reduce_lr:
+        callbacks.append(
+            ReduceLROnPlateau(
+                monitor="val_loss",
+                factor=args.cb_reduce_lr_factor,
+                patience=args.cb_reduce_lr,
+                min_lr=1e-8
+            )
         )
-    )
-
     return callbacks, checkpoint_name
 
 
@@ -235,6 +236,19 @@ def main():
         "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
         help=("Number of mini-batches for each epoch to pass through during"
               " validation"))
+    parser.add_argument(
+        "--cb_early_stop", type=int, metavar="PATIENCE", default = 50,
+        help="Number of epochs for early stop if without improvement"
+    )
+    parser.add_argument(
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default = 10,
+        help="Number of epochs to reduce learning rate without improvement"
+    )
+    parser.add_argument(
+        "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default = 0.5,
+        help=("Factor for reducing learning rate. Only activated when"
+            " `cb_reduce_lr` is set")
+    )
     parser.add_argument(
         "--outpath", type=str, metavar="OUTPATH",
         default="./",
