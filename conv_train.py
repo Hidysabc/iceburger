@@ -323,7 +323,7 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
-        "model", type=str, metavar="MODEL", default= "conv2d_model",
+        "--model", type=str, metavar="MODEL", default= "conv2d_model",
         help="Model type for training (Options: resnet50)")
     parser.add_argument(
         "--weights", type=str, metavar="WEIGHTS", default=None,
