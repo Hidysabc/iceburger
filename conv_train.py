@@ -196,6 +196,7 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
     #x = Dropout(DROPOUT, name="drop1")(x)
 
     if include_top:
+        x = Flatten(name='flatten1')(x)
         x = Dense(classes, activation="sigmoid",
                   W_regularizer=l2(L2R),
                   b_regularizer=l2(L2R),
