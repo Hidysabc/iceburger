@@ -23,13 +23,13 @@ from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 from iceburger.io import parse_json_data
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
-LOGNAME = 'iceburger-resnet50-train'
+LOGNAME = 'iceburger-conv2d-train'
 
 logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
-PRJ = "/workspace/iceburger"
+PRJ = "/iceburger"
 DATA = os.path.join(PRJ, "data/processed")
 
 #: Number filters convolutional layers
