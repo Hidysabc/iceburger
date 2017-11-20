@@ -224,7 +224,7 @@ def train(args):
 
     :param args: arguments as parsed by argparse module
     """
-    LOG.info("Loading data from {}".format(args.data))
+    LOG.info("Loading data from {}".format(DATA))
     X, X_angle, y, subset = parse_json_data(os.path.join(DATA, "train_valid.json"))
     #w = 75
     #h = 75
