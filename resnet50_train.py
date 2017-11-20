@@ -155,8 +155,8 @@ def train(args):
     #Finally create out generator
     #gen_train_ = gen_flow_train_for_one_input(X_train, y_train)
     #gen_valid_ = gen_flow_valid_for_one_input(X_valid, y_valid)
-    gen_train_ = gen_train.flow(X_train, y_train)
-    gen_valid_ = gen_valid.flow(X_valid, y_valid)
+    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=666)
+    gen_valid_ = gen_valid.flow(X_valid, y_valid, batch_size = args.batch_size, seed=666)
 
     """
     gen_train = ds.get_generator(batch_size=args.batch_size,subset="train",
