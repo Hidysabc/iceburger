@@ -63,7 +63,7 @@ def get_callbacks(args,model_out_path):
             monitor="val_loss",
             verbose=1,
             save_best_only=True,
-            save_weights_only=True
+            save_weights_only=False
         )
     )
     if args.cb_early_stop:
@@ -294,7 +294,7 @@ def train(args):
         history.history["val_acc"][best_idx])
     )
 
-    best_model_name = "{mn}-best-{val_loss:.4f}-{val_acc:.4f}-weights.hdf5".format(
+    best_model_name = "{mn}-best-{val_loss:.4f}-{val_acc:.4f}-model.hdf5".format(
         mn=args.model,
         val_loss=history.history["val_loss"][best_idx],
         val_acc=history.history["val_acc"][best_idx]
@@ -318,7 +318,7 @@ def train(args):
         val_loss=history.history["val_loss"][-1],
         val_acc=history.history["val_acc"][-1]
     )
-    model.save(os.path.join(args.outpath, final_file_root))
+    model.save(os.path.join(args.outpath, final_file_root+'.hdf5'))
 
 def main():
     parser = argparse.ArgumentParser(
