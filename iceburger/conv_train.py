@@ -34,7 +34,7 @@ LOG.setLevel(logging.DEBUG)
 #DATA = os.path.join(PRJ, "data/processed")
 
 #: Number filters convolutional layers
-NUM_CONV_FILTERS = 64
+NUM_CONV_FILTERS = 128
 
 #: Size filters convolutional layers
 CONV_FILTER_ROW = 3
@@ -177,31 +177,45 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
                   name = "conv2d_bn1")
     x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn2")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
-
     x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn3")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
+
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn4")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn5")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn6")
     x = MaxPooling2D(pool_size=(2, 2), name="pool2")(x)
 
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn5")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn6")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool3")(x)
-
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn7")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn8")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn9")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool3")(x)
+    """
+    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn7")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn8")
     x = MaxPooling2D(pool_size=(2, 2), name="pool4")(x)
 
+    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn9")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn10")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool5")(x)
+    """
     #x = Dropout(DROPOUT, name="drop1")(x)
-
     if include_top:
         x = Flatten(name="flatten1")(x)
-        x = Dense(NUM_DENSE, activation = "relu", name = "dense1")(x)
+        x = Dense(NUM_DENSE, activation = "relu",
+                  W_regularizer=l2(L2R),
+                  b_regularizer=l2(L2R),
+                  name = "dense1")(x)
         x = Dropout(DROPOUT, name = "drop1")(x)
        # x = Dense(NUM_DENSE/2, activation = "relu", name = "dense2")(x)
        # x = Dropout(DROPOUT, name = "drop2")(x)
