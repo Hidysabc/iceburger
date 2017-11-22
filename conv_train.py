@@ -29,8 +29,9 @@ logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
-PRJ = "/iceburger"
-DATA = os.path.join(PRJ, "data/processed")
+#PRJ = "/iceburger"
+#PRJ = os.getcwd()
+#DATA = os.path.join(PRJ, "data/processed")
 
 #: Number filters convolutional layers
 NUM_CONV_FILTERS = 64
@@ -38,6 +39,9 @@ NUM_CONV_FILTERS = 64
 #: Size filters convolutional layers
 CONV_FILTER_ROW = 3
 CONV_FILTER_COL = 3
+
+#: Number neurons dense layers
+NUM_DENSE = 512
 
 #: Dropout ratio
 DROPOUT = 0.5
@@ -196,7 +200,13 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
     #x = Dropout(DROPOUT, name="drop1")(x)
 
     if include_top:
-        x = Flatten(name='flatten1')(x)
+        x = Flatten(name="flatten1")(x)
+        x = Dense(NUM_DENSE, activation = "relu", name = "dense1")(x)
+        x = Dropout(DROPOUT, name = "drop1")(x)
+       # x = Dense(NUM_DENSE/2, activation = "relu", name = "dense2")(x)
+       # x = Dropout(DROPOUT, name = "drop2")(x)
+       # x = Dense(NUM_DENSE/4, activation = "relu", name = "dense3")(x)
+       # x = Dropout(DROPOUT, name = "drop3")(x)
         x = Dense(classes, activation="sigmoid",
                   W_regularizer=l2(L2R),
                   b_regularizer=l2(L2R),
@@ -225,8 +235,8 @@ def train(args):
 
     :param args: arguments as parsed by argparse module
     """
-    LOG.info("Loading data from {}".format(DATA))
-    X, X_angle, y, subset = parse_json_data(os.path.join(DATA, "train_valid.json"))
+    LOG.info("Loading data from {}".format(args.data))
+    X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
     #w = 75
     #h = 75
     X_train = X[subset=='train']
@@ -324,8 +334,11 @@ def main():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
+        "data", type=str, metavar="DATA",
+        help=("Path to training data stored in json."))
+    parser.add_argument(
         "--model", type=str, metavar="MODEL", default= "conv2d_model",
-        help="Model type for training (Options: resnet50)")
+        help="Model type for training (Options: conv2d_model)")
     parser.add_argument(
         "--weights", type=str, metavar="WEIGHTS", default=None,
         help="Path to previously saved weights")

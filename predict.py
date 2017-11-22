@@ -1,35 +1,33 @@
 from __future__ import print_function
 from __future__ import division
 import numpy as np
-import os
 import logging
 import argparse
 import pandas as pd
 import sys
-#import shutil
 
 from keras import backend as K
-#from keras.engine.topology import get_source_inputs
-#from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
-#                                                    Dense, Dropout, Flatten, GlobalAveragePooling2D,
-#                                                    GlobalMaxPooling2D, MaxPooling2D, Permute,
-#                                                    Reshape)
-from keras.models import Model,load_model
-#from keras.optimizers import RMSprop, SGD
-#from keras.preprocessing.image import ImageDataGenerator
-#from keras.regularizers import l2
-#from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from keras.models import load_model
 
-#from iceburger.io import parse_json_data
+FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
+LOGNAME = 'iceburger-predict'
 
+
+logging.basicConfig(format=FORMAT)
+LOG = logging.getLogger(LOGNAME)
+LOG.setLevel(logging.DEBUG)
+
+"""
 PRJ = "/iceburger"
 DATA = os.path.join(PRJ, "data/processed")
 MODEL = os.path.join(PRJ,"data/model")
-TEST ="test.json"
+TEST = os.path.join(DATA, "test.json")
 model_path = os.path.join(MODEL,"conv2d_model-0.3184-0.8701.hdf5")
 weights_path = os.path.join(MODEL,"conv2d_model-best-0.2949-0.8803-weights.hdf5")
 submission_csv_path = "./submission.csv"
 batch_size = 32
+"""
+
 def image_normalization(x, percentile=1):
     """Normalize the image signal value by rescale data
     :param x: :class:`numpy.ndarray` of signal of dimension (height, width, 2)
@@ -51,10 +49,10 @@ def parse_test_json_data(json_filename):
     """Parse json data to generate trainable matrices
     :param json_filename: path to input json file
     :returns: a `tuple` of
+    ID: :class: `numpy.array` of nb_samples of id
     X: :class:`numpy.ndarray` of dimension (nb_samples, height, width, 3)
     X_angle: :class:`numpy.array` of dimension (nb_samples) of incidence
         angles
-    y: :class:`numpy.array` of labels
     """
     df = pd.read_json(json_filename)
     dim = int(np.sqrt(len(df.band_1.iloc[0])))
@@ -68,15 +66,47 @@ def parse_test_json_data(json_filename):
     X_angle = df.inc_angle.values
     return (ID, X, X_angle)
 
-ID, X_test, X_angle_test = parse_test_json_data(os.path.join(DATA, TEST))
+def predict(args):
+    """Making prediction after training
 
-model = load_model(model_path)
-model.load_weights(weights_path)
-prediction = model.predict(X_test,verbose = 1, batch_size = batch_size)
-
-submission = pd.DataFrame({"id": ID,
+    :param args: arguments as parsed by argparse module
+    """
+    LOG.info("Loading data from {}".format(args.test))
+    ID, X_test, X_angle_test = parse_test_json_data(args.test)
+    LOG.info("Loading model from {}".format(args.model_path))
+    model = load_model(args.model_path)
+    LOG.info("Start predicting...")
+    prediction = model.predict(X_test,verbose = 1, batch_size = args.batch_size)
+    submission = pd.DataFrame({"id": ID,
                            "is_iceberg": prediction.reshape((
                                         prediction.shape[0]))})
-#print(submission.head(10))
-submission.to_csv(submission_csv_path, index =False)
+    #print(submission.head(10))
+    LOG.info("Saving prediction to {}".format(args.submission_csv_path))
+    submission.to_csv(args.submission_csv_path, index =False)
 
+
+def main():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "model_path", type=str, metavar="MODEL_PATH",
+        help="Path to previously saved model")
+    parser.add_argument(
+        "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
+        help="Number of samples in a mini-batch")
+    parser.add_argument(
+        "--submission_csv_path", type=str, metavar="SUBMISSION_CSV_PATH",
+        default="./submission.csv",
+        help="Output path where submission of prediction to be saved")
+    parser.add_argument(
+        "test", type=str, metavar="TEST",
+        help=("Path to the json file where test data is saved"))
+    args = parser.parse_args()
+
+    prediction = predict(args)
+
+    LOG.info("Done :)")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

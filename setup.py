@@ -30,11 +30,10 @@ setup(name="iceburger",
 #     package_data={"deepsense": ["resources/templates/*",
 #                                 "resources/har_model/*"]},
       entry_points={
-#          "console_scripts": [
-#              "swhar-data-hhar=swhar.datasets.hhar:main",
-#              "rpm-inccalc-spark=rpm.spark.inccalc:main",
-#              "rpm-luigi=rpm.pipeline:main",
-#          ],
+          "console_scripts": [
+              "iceburger-conv2d-train=conv_train:main",
+              "iceburger-predict=predict:main"
+           ]
       },
       include_package_data=True,
       zip_safe=False)
