@@ -56,7 +56,7 @@ def get_callbacks(args,model_out_path):
     :param args: arguments as parsed by argparse module
     :returns: `list` of `keras.callbacks` classes
     """
-    checkpoint_name= "{mn}-best_val_loss_weights.hdf5".format(mn=args.model)
+    checkpoint_name= "{mn}-best_val_loss.hdf5".format(mn=args.model)
     callbacks = []
     #outpath = args.outpath
 
