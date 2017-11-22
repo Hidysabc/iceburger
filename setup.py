@@ -31,8 +31,8 @@ setup(name="iceburger",
 #                                 "resources/har_model/*"]},
       entry_points={
           "console_scripts": [
-              "iceburger-conv2d-train=conv_train:main",
-              "iceburger-predict=predict:main"
+              "iceburger-conv2d-train=iceburger.conv_train:main",
+              "iceburger-predict=iceburger.predict:main"
            ]
       },
       include_package_data=True,
