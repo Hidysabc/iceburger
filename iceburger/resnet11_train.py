@@ -1,0 +1,635 @@
+from __future__ import print_function
+from __future__ import division
+import numpy as np
+import os
+import logging
+import argparse
+import pandas as pd
+import sys
+import shutil
+import warnings
+from keras import backend as K
+from keras import layers
+from keras.utils import layer_utils
+from keras.utils.data_utils import get_file
+from keras.imagenet_utils import _obtain_input_shape
+from keras.engine.topology import get_source_inputs
+from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
+                          Dense, Dropout, Flatten, GlobalAveragePooling2D,
+                          AveragePooling2D,
+                          GlobalMaxPooling2D, MaxPooling2D, Permute,
+                          Reshape)
+from keras.models import Model
+from keras.optimizers import RMSprop, SGD
+from keras.preprocessing.image import ImageDataGenerator
+from keras.regularizers import l2
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+
+from iceburger.io import parse_json_data
+
+WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels.h5'
+WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
+
+FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
+LOGNAME = 'iceburger-resnet11-train'
+
+logging.basicConfig(format=FORMAT)
+LOG = logging.getLogger(LOGNAME)
+LOG.setLevel(logging.DEBUG)
+
+#PRJ = "/iceburger"
+#PRJ = os.getcwd()
+#DATA = os.path.join(PRJ, "data/processed")
+
+#: Number filters convolutional layers
+NUM_CONV_FILTERS = 128
+
+#: Size filters convolutional layers
+CONV_FILTER_ROW = 3
+CONV_FILTER_COL = 3
+
+#: Number neurons dense layers
+NUM_DENSE = 512
+
+#: Dropout ratio
+DROPOUT = 0.5
+
+#: Regularization
+L1L2R = 1E-3
+L2R = 5E-3
+
+def get_callbacks(args,model_out_path):
+    """
+    Create list of callback functions for fitting step
+    :param args: arguments as parsed by argparse module
+    :returns: `list` of `keras.callbacks` classes
+    """
+    checkpoint_name= "{mn}-best_val_loss.hdf5".format(mn=args.model)
+    callbacks = []
+    #outpath = args.outpath
+
+    # save best model so far
+    callbacks.append(
+        ModelCheckpoint(
+            filepath=os.path.join(model_out_path, checkpoint_name),
+            monitor="val_loss",
+            verbose=1,
+            save_best_only=True,
+            save_weights_only=False
+        )
+    )
+    if args.cb_early_stop:
+        # stop training earlier if the model is not improving
+        callbacks.append(
+            EarlyStopping(
+                monitor="val_loss",
+                patience=args.cb_early_stop,
+                verbose=1, mode='auto'
+            )
+        )
+    if args.cb_reduce_lr:
+        callbacks.append(
+            ReduceLROnPlateau(
+                monitor="val_loss",
+                factor=args.cb_reduce_lr_factor,
+                patience=args.cb_reduce_lr,
+                min_lr=1e-8
+            )
+        )
+
+    return callbacks, checkpoint_name
+
+def compile_model(args, input_shape):
+    """Build and compile model
+
+    :param args: arguments as parsed by argparse module
+    :returns: `keras.models.Model` of compiled model
+    """
+    if args.model.lower()=="conv2d_model":
+        model = Conv2D_Model(weights=args.weights, include_top=True,
+                              input_shape=input_shape)
+        optimizer = SGD(lr = 0.0001, momentum = 0.9)
+    else:
+        LOG.err("Unknown model name: {}".format(args.model))
+
+    model.compile(optimizer=optimizer,
+                  loss='binary_crossentropy',
+                  metrics=['accuracy'])
+    return model
+
+
+
+def conv2d_bn(x, filters, num_row, num_col, padding = 'same',
+              strides = (1,1), name = 'None'):
+    """Utility function to apply conv + BN.
+    # Arguments
+        x: input tensor.
+        filters: filters in `Conv2D`.
+        num_row: height of the convolution kernel.
+        num_col: width of the convolution kernel.
+        padding: padding mode in `Conv2D`.
+        strides: strides in `Conv2D`.
+        name: name of the ops; will become `name + '_conv'`
+            for the convolution and `name + '_bn'` for the
+            batch norm layer.
+    # Returns
+        Output tensor after applying `Conv2D` and `BatchNormalization`.
+    """
+    if name is not None:
+        bn_name = name + '_bn'
+        conv_name = name + '_conv'
+    else:
+        bn_name = None
+        conv_name = None
+    if K.image_data_format() == 'channels_first':
+        bn_axis = 1
+    else:
+        bn_axis = 3
+    x = Conv2D(
+        filters, (num_row, num_col),
+        strides=strides,
+        padding=padding,
+        use_bias=False,
+        name=conv_name)(x)
+    x = BatchNormalization(axis=bn_axis, scale=False, name=bn_name)(x)
+    x = Activation('relu', name=name)(x)
+    return x
+
+def identity_block(input_tensor, kernel_size, filters, stage, block):
+    """The identity block is the block that has no conv layer at shortcut.
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+    # Returns
+        Output tensor for the block.
+    """
+    filters1, filters2, filters3 = filters
+    if K.image_data_format() == 'channels_last':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = Conv2D(filters1, (1, 1), name=conv_name_base + '2a')(input_tensor)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = Conv2D(filters2, kernel_size,
+               padding='same', name=conv_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+    x = layers.add([x, input_tensor])
+    x = Activation('relu')(x)
+    return x
+
+def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+    """A block that has a conv layer at shortcut.
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+    # Returns
+        Output tensor for the block.
+    Note that from stage 3, the first conv layer at main path is with strides=(2,2)
+    And the shortcut should have strides=(2,2) as well
+    """
+    filters1, filters2, filters3 = filters
+    if K.image_data_format() == 'channels_last':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+
+    x = Conv2D(filters1, (1, 1), strides=strides,
+               name=conv_name_base + '2a')(input_tensor)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+
+    x = Conv2D(filters2, kernel_size, padding='same',
+               name=conv_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+
+    x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+
+    shortcut = Conv2D(filters3, (1, 1), strides=strides,
+                      name=conv_name_base + '1')(input_tensor)
+    shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+
+    x = layers.add([x, shortcut])
+    x = Activation('relu')(x)
+    return x
+
+def ResNet50(include_top=True, weights='imagenet',
+             input_tensor=None, input_shape=None,
+             pooling=None,
+             classes=1000):
+    """Instantiates the ResNet50 architecture.
+    Optionally loads weights pre-trained
+    on ImageNet. Note that when using TensorFlow,
+    for best performance you should set
+    `image_data_format='channels_last'` in your Keras config
+    at ~/.keras/keras.json.
+    The model and the weights are compatible with both
+    TensorFlow and Theano. The data format
+    convention used by the model is the one
+    specified in your Keras config file.
+    # Arguments
+        include_top: whether to include the fully-connected
+            layer at the top of the network.
+        weights: one of `None` (random initialization)
+            or 'imagenet' (pre-training on ImageNet).
+        input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
+            to use as image input for the model.
+        input_shape: optional shape tuple, only to be specified
+            if `include_top` is False (otherwise the input shape
+            has to be `(224, 224, 3)` (with `channels_last` data format)
+            or `(3, 224, 224)` (with `channels_first` data format).
+            It should have exactly 3 inputs channels,
+            and width and height should be no smaller than 197.
+            E.g. `(200, 200, 3)` would be one valid value.
+        pooling: Optional pooling mode for feature extraction
+            when `include_top` is `False`.
+            - `None` means that the output of the model will be
+                the 4D tensor output of the
+                last convolutional layer.
+            - `avg` means that global average pooling
+                will be applied to the output of the
+                last convolutional layer, and thus
+                the output of the model will be a 2D tensor.
+            - `max` means that global max pooling will
+                be applied.
+        classes: optional number of classes to classify images
+            into, only to be specified if `include_top` is True, and
+            if no `weights` argument is specified.
+    # Returns
+        A Keras model instance.
+    # Raises
+        ValueError: in case of invalid argument for `weights`,
+            or invalid input shape.
+    """
+    if weights not in {'imagenet', None}:
+        raise ValueError('The `weights` argument should be either '
+                         '`None` (random initialization) or `imagenet` '
+                         '(pre-training on ImageNet).')
+
+    if weights == 'imagenet' and include_top and classes != 1000:
+        raise ValueError('If using `weights` as imagenet with `include_top`'
+                         ' as true, `classes` should be 1000')
+
+    # Determine proper input shape
+    input_shape = _obtain_input_shape(input_shape,
+                                      default_size=224,
+                                      min_size=197,
+                                      data_format=K.image_data_format(),
+                                      require_flatten=include_top,
+                                      weights=weights)
+
+    if input_tensor is None:
+        img_input = Input(shape=input_shape)
+    else:
+        if not K.is_keras_tensor(input_tensor):
+            img_input = Input(tensor=input_tensor, shape=input_shape)
+        else:
+            img_input = input_tensor
+    if K.image_data_format() == 'channels_last':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+
+    x = Conv2D(
+        64, (7, 7), strides=(2, 2), padding='same', name='conv1')(img_input)
+    x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+    x = Activation('relu')(x)
+    x = MaxPooling2D((3, 3), strides=(2, 2))(x)
+
+    x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+    x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
+    x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+
+    x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
+    x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
+
+    x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
+    x = identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
+    x = identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
+    x = identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
+    x = identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
+    x = identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
+
+    x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
+    x = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+    x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
+
+    x = AveragePooling2D((7, 7), name='avg_pool')(x)
+
+    if include_top:
+        x = Flatten()(x)
+        x = Dense(classes, activation='softmax', name='fc1000')(x)
+    else:
+        if pooling == 'avg':
+            x = GlobalAveragePooling2D()(x)
+        elif pooling == 'max':
+            x = GlobalMaxPooling2D()(x)
+
+    # Ensure that the model takes into account
+    # any potential predecessors of `input_tensor`.
+    if input_tensor is not None:
+        inputs = get_source_inputs(input_tensor)
+    else:
+        inputs = img_input
+    # Create model.
+    model = Model(inputs, x, name='resnet50')
+
+    # load weights
+    if weights == 'imagenet':
+        if include_top:
+            weights_path = get_file('resnet50_weights_tf_dim_ordering_tf_kernels.h5',
+                                    WEIGHTS_PATH,
+                                    cache_subdir='models',
+                                    md5_hash='a7b3fe01876f51b976af0dea6bc144eb')
+        else:
+            weights_path = get_file('resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5',
+                                    WEIGHTS_PATH_NO_TOP,
+                                    cache_subdir='models',
+                                    md5_hash='a268eb855778b3df3c7506639542a6af')
+        model.load_weights(weights_path)
+        if K.backend() == 'theano':
+            layer_utils.convert_all_kernels_in_model(model)
+            if include_top:
+                maxpool = model.get_layer(name='avg_pool')
+                shape = maxpool.output_shape[1:]
+                dense = model.get_layer(name='fc1000')
+                layer_utils.convert_dense_weights_data_format(dense, shape, 'channels_first')
+
+        if K.image_data_format() == 'channels_first' and K.backend() == 'tensorflow':
+            warnings.warn('You are using the TensorFlow backend, yet you '
+                          'are using the Theano '
+                          'image data format convention '
+                          '(`image_data_format="channels_first"`). '
+                          'For best performance, set '
+                          '`image_data_format="channels_last"` in '
+                          'your Keras config '
+                          'at ~/.keras/keras.json.')
+    return model
+
+def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
+         input_shape = None, pooling = None, classes = 1):
+    """Instantiate the Conv architecture
+
+    :param include_top: whether to include fully-connected layers at the top
+        of the network
+    :param weights: path to pretrained weights or `None`
+    :param input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
+        to use as image input for the model.
+    :param input_shape: optional shape tuple, only to be specified if
+        `include_top` is False
+    :param pooling: optional pooling mode for feature extraction when
+        `include_top` is False
+    :param classes: optional number of classes to classify data into, only to
+        be specified if `include_top` is True, and if no `weights` argument
+        is specified.
+    :returns: A :class:`keras.models.Model` instance
+    """
+    if input_tensor is None:
+        image_input = Input(shape=input_shape)
+    else:
+        if not K.is_keras_tensor(input_tensor):
+            image_input = Input(tensor=input_tensor, shape=input_shape)
+        else:
+            image_input = input_tensor
+
+    x = conv2d_bn(image_input, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn1")
+    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn2")
+    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn3")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
+
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn4")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn5")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn6")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool2")(x)
+
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn7")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn8")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn9")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool3")(x)
+    """
+    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn7")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn8")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool4")(x)
+
+    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn9")
+    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+                  name = "conv2d_bn10")
+    x = MaxPooling2D(pool_size=(2, 2), name="pool5")(x)
+    """
+    #x = Dropout(DROPOUT, name="drop1")(x)
+    if include_top:
+        x = Flatten(name="flatten1")(x)
+        x = Dense(NUM_DENSE, activation = "relu",
+                  W_regularizer=l2(L2R),
+                  b_regularizer=l2(L2R),
+                  name = "dense1")(x)
+        x = Dropout(DROPOUT, name = "drop1")(x)
+       # x = Dense(NUM_DENSE/2, activation = "relu", name = "dense2")(x)
+       # x = Dropout(DROPOUT, name = "drop2")(x)
+       # x = Dense(NUM_DENSE/4, activation = "relu", name = "dense3")(x)
+       # x = Dropout(DROPOUT, name = "drop3")(x)
+        x = Dense(classes, activation="sigmoid",
+                  W_regularizer=l2(L2R),
+                  b_regularizer=l2(L2R),
+                  name="predictions")(x)
+    else:
+        if pooling == 'avg':
+            x = GlobalAveragePooling2D()(x)
+        elif pooling == 'max':
+            x = GlobalMaxPooling2D()(x)
+
+    # Ensure that the model takes into account
+    # any potential predecessors of `input_tensor`.
+    if input_tensor is not None:
+        inputs = get_source_inputs(input_tensor)
+    else:
+        inputs = image_input
+    # Create model.
+    model = Model(inputs, x, name='conv2d_model')
+    if weights:
+        model.load_weights(weights)
+
+    return model
+
+def train(args):
+    """Train a neural network
+
+    :param args: arguments as parsed by argparse module
+    """
+    LOG.info("Loading data from {}".format(args.data))
+    X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
+    #w = 75
+    #h = 75
+    X_train = X[subset=='train']
+    X_angle_train = X_angle[subset=='train']
+    y_train = y[subset=='train']
+    X_valid = X[subset=='valid']
+    X_angle_valid = X_angle[subset=='valid']
+    y_valid = y[subset=='valid']
+    #ds = DataSet.from_pickle(args.data)
+    #nb_classes = ds.df.activity.nunique()
+
+    LOG.info("Initiate model")
+    model = compile_model(args, input_shape=(75,75,3))
+
+    LOG.info("Create sample generators")
+    gen_train = ImageDataGenerator(horizontal_flip = True,
+                         vertical_flip = True,
+                         width_shift_range = 0.1,
+                         height_shift_range = 0.1,
+                         zoom_range = 0.1,
+                         rotation_range = 45)
+
+    gen_valid = ImageDataGenerator(horizontal_flip = True,
+                         vertical_flip = True,
+                         width_shift_range = 0.1,
+                         height_shift_range = 0.1,
+                         zoom_range = 0.1,
+                         rotation_range = 45)
+    # Here is the function that merges our two generators
+    # We use the exact same generator with the same random seed for both the y and angle arrays
+    def gen_flow_for_one_input(X1, y):
+        genX1 = gen_train.flow(X1, y, batch_size= args.batch_size, seed=666)
+        while True:
+            X1i = genX1.next()
+            yield X1i[0], X1i[1]
+
+    #Finally create out generator
+    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=666)
+    gen_valid_ = gen_valid.flow(X_valid, y_valid, batch_size = args.batch_size, seed=666)
+    #gen_train_ = gen_flow_train_for_one_input(X_train, y_train)
+    #gen_valid_ = gen_flow_valid_for_one_input(X_valid, y_valid)
+
+
+    LOG.info("Create callback functions")
+    model_out_path = os.path.join(os.path.abspath(args.outpath),"checkpoints")
+    if not os.path.exists(model_out_path):
+        os.makedirs(model_out_path)
+    callbacks, checkpoint_model_name = get_callbacks(args, model_out_path)
+
+    LOG.info("Start training ...")
+    history = model.fit_generator(
+        gen_train_,
+        steps_per_epoch=args.train_steps,
+        epochs=args.epochs, verbose=1,
+        validation_data=gen_valid_,
+        validation_steps=args.valid_steps,
+        callbacks=callbacks)
+
+    best_idx = np.argmin(history.history['val_loss'])
+    LOG.info("Best model occurred at epoch {}:".format(best_idx))
+    LOG.info("  Best validation score: {:.4f}".format(
+        history.history["val_loss"][best_idx])
+    )
+    LOG.info("  Best validation accuracy: {:.4f} ".format(
+        history.history["val_acc"][best_idx])
+    )
+
+    best_model_name = "{mn}-best-{val_loss:.4f}-{val_acc:.4f}-model.hdf5".format(
+        mn=args.model,
+        val_loss=history.history["val_loss"][best_idx],
+        val_acc=history.history["val_acc"][best_idx]
+    )
+    LOG.info("Rename best model to {}".format(best_model_name))
+    shutil.move(
+        os.path.join(model_out_path, checkpoint_model_name),
+        os.path.join(args.outpath, best_model_name)
+    )
+
+    LOG.info("Saving final model ...")
+    LOG.info("  Final validation score: {:.4f}".format(
+        history.history["val_loss"][-1])
+    )
+    LOG.info("  Final validation accuracy: {:.4f} ".format(
+        history.history["val_acc"][-1])
+    )
+
+    final_file_root = "{mn}-{val_loss:.4f}-{val_acc:.4f}".format(
+        mn=args.model,
+        val_loss=history.history["val_loss"][-1],
+        val_acc=history.history["val_acc"][-1]
+    )
+    model.save(os.path.join(args.outpath, final_file_root+'.hdf5'))
+
+def main():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "data", type=str, metavar="DATA",
+        help=("Path to training data stored in json."))
+    parser.add_argument(
+        "--model", type=str, metavar="MODEL", default= "conv2d_model",
+        help="Model type for training (Options: conv2d_model)")
+    parser.add_argument(
+        "--weights", type=str, metavar="WEIGHTS", default=None,
+        help="Path to previously saved weights")
+    parser.add_argument(
+        "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
+        help="Number of samples in a mini-batch")
+    parser.add_argument(
+        "--epochs", type=int, metavar="EPOCHS", default=1000,
+        help="Number of epochs")
+    parser.add_argument(
+        "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
+        help=("Number of mini-batches for each epoch to pass through during"
+              " training"))
+    parser.add_argument(
+        "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
+        help=("Number of mini-batches for each epoch to pass through during"
+              " validation"))
+    parser.add_argument(
+        "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
+        help="Number of epochs for early stop if without improvement")
+    parser.add_argument(
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=10,
+        help="Number of epochs to reduce learning rate without improvement")
+    parser.add_argument(
+        "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
+        help=("Factor for reducing learning rate. Only activated when"
+              " `cb_reduce_lr` is set"))
+    parser.add_argument(
+        "--outpath", type=str, metavar="OUTPATH",
+        default="./",
+        help="Output path where parsed data set class to be saved")
+    args = parser.parse_args()
+
+    model = train(args)
+
+    LOG.info("Done :)")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
