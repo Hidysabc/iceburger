@@ -17,7 +17,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
 from keras.models import Model
-from keras.optimizers import RMSprop, SGD
+from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -100,16 +100,19 @@ def get_callbacks(args,model_out_path):
 
     return callbacks, checkpoint_name
 
+
 def compile_model(args, input_shape):
     """Build and compile model
 
     :param args: arguments as parsed by argparse module
     :returns: `keras.models.Model` of compiled model
     """
+    lr = 1e-2
+    LOG.info("Learning rate: {}".format(lr))
     if args.model.lower()=="inception_model":
         model = Inception_Model(weights=args.weights, include_top=True,
                               input_shape=input_shape)
-        optimizer = SGD(lr = 0.0001, momentum = 0.9)
+        optimizer = Adam(lr=lr)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
