@@ -22,7 +22,7 @@ setup(name="iceburger",
       packages=find_packages(),
       install_requires=[
           "pandas",
-          "keras==2.0.9",
+          "keras>=2.0.9",
           "scikit-learn>=0.18.1",
           "h5py>=2.7.0"
       ],
