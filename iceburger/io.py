@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 
-def image_normalization(x, percentile=1):
+def image_normalization(x, percentile=1, pad_channel="zeros"):
     """Normalize the image signal value by rescale data
 
     :param x: :class:`numpy.ndarray` of signal of dimension (height, width, 2)
@@ -20,11 +20,15 @@ def image_normalization(x, percentile=1):
     x = (x - vmin) / (vmax - vmin)
     x[x > 1] = 1
     x[x < 0] = 0
-    return np.concatenate([x, np.zeros(x.shape[:2] + (1,))],
-                          axis=-1)[np.newaxis, :, :, :]
+    if pad_channel == "avg":
+        pad = ((x[:, :, 0] + x[:, :, 1]) / 2)[:, :, np.newaxis]
+    else:
+        pad = np.zeros(x.shape[:2] + (1,))
+
+    return np.concatenate([x, pad], axis=-1)[np.newaxis, :, :, :]
 
 
-def parse_json_data(json_filename):
+def parse_json_data(json_filename, percentile=1, padding="zeros"):
     """Parse json data to generate trainable matrices
 
     :param json_filename: path to input json file
@@ -41,7 +45,8 @@ def parse_json_data(json_filename):
                         np.array(r.band_2).reshape((dim, dim, 1))],
                        axis=-1)[np.newaxis, :, :, :]
         for _, r in df.iterrows()], axis=0)
-    X = np.concatenate([image_normalization(x) for x in _X], axis=0)
+    X = np.concatenate([image_normalization(x, percentile, padding)
+                        for x in _X], axis=0)
     X_angle = df.inc_angle.values
     y = df.is_iceberg.values
     if "set" in df.columns:
