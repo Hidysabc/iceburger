@@ -16,7 +16,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           GlobalAveragePooling2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
@@ -110,7 +110,10 @@ def compile_model(args, input_shape):
     lr = 1e-2
     LOG.info("Learning rate: {}".format(lr))
     if args.model.lower()=="inception_model":
-        model = Inception_Model(weights=args.weights, include_top=True,
+        if args.model_path:
+            model = load_model(args.model_path)
+        else:
+            model = Inception_Model(include_top=True,
                               input_shape=input_shape)
         optimizer = Adam(lr=lr)
     else:
@@ -575,8 +578,8 @@ def main():
         "--model", type=str, metavar="MODEL", default= "inception_model",
         help="Model type for training (Options: inception_model)")
     parser.add_argument(
-        "--weights", type=str, metavar="WEIGHTS", default=None,
-        help="Path to previously saved weights")
+        "--model_path", type=str, metavar="MODEL_PATH", default=None,
+        help="Path to previously saved model(*.hdf5)")
     parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
@@ -607,7 +610,7 @@ def main():
         help="Output path where parsed data set class to be saved")
     args = parser.parse_args()
 
-    model = train(args)
+    train(args)
 
     LOG.info("Done :)")
 

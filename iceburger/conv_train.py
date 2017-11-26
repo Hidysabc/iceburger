@@ -7,14 +7,13 @@ import argparse
 import pandas as pd
 import sys
 import shutil
-
 from keras import backend as K
 from keras.engine.topology import get_source_inputs
 from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           Dense, Dropout, Flatten, GlobalAveragePooling2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
-from keras.models import Model
+from keras.models import Model, load_model
 from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
@@ -98,7 +97,10 @@ def compile_model(args, input_shape):
     :returns: `keras.models.Model` of compiled model
     """
     if args.model.lower()=="conv2d_model":
-        model = Conv2D_Model(weights=args.weights, include_top=True,
+        if args.model_path:
+            model = load_model(args.model_path)
+        else:
+            model = Conv2D_Model(include_top=True,
                               input_shape=input_shape)
         optimizer = Adam()
         #optimizer = SGD(lr = 0.001, momentum = 0.9)
@@ -242,7 +244,6 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
     model = Model(inputs, x, name='conv2d_model')
     if weights:
         model.load_weights(weights)
-
     return model
 
 def train(args):
@@ -355,8 +356,8 @@ def main():
         "--model", type=str, metavar="MODEL", default= "conv2d_model",
         help="Model type for training (Options: conv2d_model)")
     parser.add_argument(
-        "--weights", type=str, metavar="WEIGHTS", default=None,
-        help="Path to previously saved weights")
+        "--model_path", type=str, metavar="MODEL_PATH", default = None,
+        help="Path to previously saved model (*.hdf5)")
     parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")

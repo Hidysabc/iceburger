@@ -12,15 +12,14 @@ from keras import backend as K
 from keras import layers
 from keras.utils import layer_utils
 from keras.utils.data_utils import get_file
-from keras.imagenet_utils import _obtain_input_shape
 from keras.engine.topology import get_source_inputs
 from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           Dense, Dropout, Flatten, GlobalAveragePooling2D,
                           AveragePooling2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
-from keras.models import Model
-from keras.optimizers import RMSprop, SGD
+from keras.models import Model, load_model
+from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -31,7 +30,7 @@ WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/downlo
 WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.2/resnet50_weights_tf_dim_ordering_tf_kernels_notop.h5'
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
-LOGNAME = 'iceburger-resnet11-train'
+LOGNAME = 'iceburger-resnet20-train'
 
 logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
@@ -105,10 +104,13 @@ def compile_model(args, input_shape):
     :param args: arguments as parsed by argparse module
     :returns: `keras.models.Model` of compiled model
     """
-    if args.model.lower()=="conv2d_model":
-        model = Conv2D_Model(weights=args.weights, include_top=True,
+    if args.model.lower()=="resnet20":
+        if args.model_path:
+            model = load_model(args.model_path)
+        else:
+            model = ResNet20(include_top=True,
                               input_shape=input_shape)
-        optimizer = SGD(lr = 0.0001, momentum = 0.9)
+        optimizer = Adam()
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
@@ -173,19 +175,15 @@ def identity_block(input_tensor, kernel_size, filters, stage, block):
         bn_axis = 1
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
-
     x = Conv2D(filters1, (1, 1), name=conv_name_base + '2a')(input_tensor)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
-
     x = Conv2D(filters2, kernel_size,
                padding='same', name=conv_name_base + '2b')(x)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
-
     x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
-
     x = layers.add([x, input_tensor])
     x = Activation('relu')(x)
     return x
@@ -210,32 +208,27 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
         bn_axis = 1
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
-
     x = Conv2D(filters1, (1, 1), strides=strides,
-               name=conv_name_base + '2a')(input_tensor)
+              name=conv_name_base + '2a')(input_tensor)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
-
     x = Conv2D(filters2, kernel_size, padding='same',
                name=conv_name_base + '2b')(x)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
-
     x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
-
     shortcut = Conv2D(filters3, (1, 1), strides=strides,
                       name=conv_name_base + '1')(input_tensor)
     shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
-
     x = layers.add([x, shortcut])
     x = Activation('relu')(x)
     return x
 
-def ResNet50(include_top=True, weights='imagenet',
+def ResNet20(include_top=True, weights = None,
              input_tensor=None, input_shape=None,
              pooling=None,
-             classes=1000):
+             classes=1):
     """Instantiates the ResNet50 architecture.
     Optionally loads weights pre-trained
     on ImageNet. Note that when using TensorFlow,
@@ -284,19 +277,18 @@ def ResNet50(include_top=True, weights='imagenet',
         raise ValueError('The `weights` argument should be either '
                          '`None` (random initialization) or `imagenet` '
                          '(pre-training on ImageNet).')
-
     if weights == 'imagenet' and include_top and classes != 1000:
         raise ValueError('If using `weights` as imagenet with `include_top`'
                          ' as true, `classes` should be 1000')
-
     # Determine proper input shape
+    """
     input_shape = _obtain_input_shape(input_shape,
                                       default_size=224,
                                       min_size=197,
                                       data_format=K.image_data_format(),
                                       require_flatten=include_top,
                                       weights=weights)
-
+    """
     if input_tensor is None:
         img_input = Input(shape=input_shape)
     else:
@@ -308,22 +300,19 @@ def ResNet50(include_top=True, weights='imagenet',
         bn_axis = 3
     else:
         bn_axis = 1
-
     x = Conv2D(
         64, (7, 7), strides=(2, 2), padding='same', name='conv1')(img_input)
     x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D((3, 3), strides=(2, 2))(x)
-
     x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
-
     x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
-
+    """
     x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
@@ -334,18 +323,18 @@ def ResNet50(include_top=True, weights='imagenet',
     x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
-
-    x = AveragePooling2D((7, 7), name='avg_pool')(x)
-
+    """
+    x = AveragePooling2D((9,9), name = "avg_pool")(x)
+    #x = AveragePooling2D((7, 7), name='avg_pool')(x)
     if include_top:
         x = Flatten()(x)
-        x = Dense(classes, activation='softmax', name='fc1000')(x)
+        x = Dense(classes, activation = "sigmoid", name = "fc1000")(x)
+        #x = Dense(classes, activation='softmax', name='fc1000')(x)
     else:
         if pooling == 'avg':
             x = GlobalAveragePooling2D()(x)
         elif pooling == 'max':
             x = GlobalMaxPooling2D()(x)
-
     # Ensure that the model takes into account
     # any potential predecessors of `input_tensor`.
     if input_tensor is not None:
@@ -353,8 +342,7 @@ def ResNet50(include_top=True, weights='imagenet',
     else:
         inputs = img_input
     # Create model.
-    model = Model(inputs, x, name='resnet50')
-
+    model = Model(inputs, x, name='resnet')
     # load weights
     if weights == 'imagenet':
         if include_top:
@@ -375,7 +363,6 @@ def ResNet50(include_top=True, weights='imagenet',
                 shape = maxpool.output_shape[1:]
                 dense = model.get_layer(name='fc1000')
                 layer_utils.convert_dense_weights_data_format(dense, shape, 'channels_first')
-
         if K.image_data_format() == 'channels_first' and K.backend() == 'tensorflow':
             warnings.warn('You are using the TensorFlow backend, yet you '
                           'are using the Theano '
@@ -387,102 +374,6 @@ def ResNet50(include_top=True, weights='imagenet',
                           'at ~/.keras/keras.json.')
     return model
 
-def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
-         input_shape = None, pooling = None, classes = 1):
-    """Instantiate the Conv architecture
-
-    :param include_top: whether to include fully-connected layers at the top
-        of the network
-    :param weights: path to pretrained weights or `None`
-    :param input_tensor: optional Keras tensor (i.e. output of `layers.Input()`)
-        to use as image input for the model.
-    :param input_shape: optional shape tuple, only to be specified if
-        `include_top` is False
-    :param pooling: optional pooling mode for feature extraction when
-        `include_top` is False
-    :param classes: optional number of classes to classify data into, only to
-        be specified if `include_top` is True, and if no `weights` argument
-        is specified.
-    :returns: A :class:`keras.models.Model` instance
-    """
-    if input_tensor is None:
-        image_input = Input(shape=input_shape)
-    else:
-        if not K.is_keras_tensor(input_tensor):
-            image_input = Input(tensor=input_tensor, shape=input_shape)
-        else:
-            image_input = input_tensor
-
-    x = conv2d_bn(image_input, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn1")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn2")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn3")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
-
-    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn4")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn5")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//2, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn6")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool2")(x)
-
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn7")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn8")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn9")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool3")(x)
-    """
-    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn7")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//8, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn8")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool4")(x)
-
-    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn9")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//16, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
-                  name = "conv2d_bn10")
-    x = MaxPooling2D(pool_size=(2, 2), name="pool5")(x)
-    """
-    #x = Dropout(DROPOUT, name="drop1")(x)
-    if include_top:
-        x = Flatten(name="flatten1")(x)
-        x = Dense(NUM_DENSE, activation = "relu",
-                  W_regularizer=l2(L2R),
-                  b_regularizer=l2(L2R),
-                  name = "dense1")(x)
-        x = Dropout(DROPOUT, name = "drop1")(x)
-       # x = Dense(NUM_DENSE/2, activation = "relu", name = "dense2")(x)
-       # x = Dropout(DROPOUT, name = "drop2")(x)
-       # x = Dense(NUM_DENSE/4, activation = "relu", name = "dense3")(x)
-       # x = Dropout(DROPOUT, name = "drop3")(x)
-        x = Dense(classes, activation="sigmoid",
-                  W_regularizer=l2(L2R),
-                  b_regularizer=l2(L2R),
-                  name="predictions")(x)
-    else:
-        if pooling == 'avg':
-            x = GlobalAveragePooling2D()(x)
-        elif pooling == 'max':
-            x = GlobalMaxPooling2D()(x)
-
-    # Ensure that the model takes into account
-    # any potential predecessors of `input_tensor`.
-    if input_tensor is not None:
-        inputs = get_source_inputs(input_tensor)
-    else:
-        inputs = image_input
-    # Create model.
-    model = Model(inputs, x, name='conv2d_model')
-    if weights:
-        model.load_weights(weights)
-
-    return model
 
 def train(args):
     """Train a neural network
@@ -591,11 +482,11 @@ def main():
         "data", type=str, metavar="DATA",
         help=("Path to training data stored in json."))
     parser.add_argument(
-        "--model", type=str, metavar="MODEL", default= "conv2d_model",
-        help="Model type for training (Options: conv2d_model)")
+        "--model", type=str, metavar="MODEL", default= "resnet20",
+        help="Model type for training (Options: resnet20)")
     parser.add_argument(
-        "--weights", type=str, metavar="WEIGHTS", default=None,
-        help="Path to previously saved weights")
+        "--model_path", type=str, metavar="MODEL_PATH", default=None,
+        help="Path to previously saved model(*.hdf5)")
     parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
@@ -626,7 +517,7 @@ def main():
         help="Output path where parsed data set class to be saved")
     args = parser.parse_args()
 
-    model = train(args)
+    train(args)
 
     LOG.info("Done :)")
 

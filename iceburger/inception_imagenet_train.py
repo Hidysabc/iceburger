@@ -14,7 +14,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           GlobalAveragePooling2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
-from keras.models import Model
+from keras.models import Model,load_model
 from keras.optimizers import Adam, Nadam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
@@ -99,12 +99,15 @@ def compile_model(args, input_shape):
     # lr = 1e-3
     # LOG.info("Learning rate: {}".format(lr))
     if args.model.lower() == "inception_model":
-        LOG.info("Use imagenet weights")
-        inception = InceptionV3(include_top=False, input_shape=input_shape)
-        last_mix = inception.get_layer(name="mixed10")
-        top_layer = GlobalAveragePooling2D(name='avg_pool')(last_mix.output)
-        top_layer = Dense(1, activation="sigmoid", name="predictions")(top_layer)
-        model = Model(inputs=inception.input, outputs=top_layer)
+        if args.model_path:
+            model = load_model(args.model_path)
+        else:
+            LOG.info("Use imagenet weights")
+            inception = InceptionV3(include_top=False, input_shape=input_shape)
+            last_mix = inception.get_layer(name="mixed10")
+            top_layer = GlobalAveragePooling2D(name='avg_pool')(last_mix.output)
+            top_layer = Dense(1, activation="sigmoid", name="predictions")(top_layer)
+            model = Model(inputs=inception.input, outputs=top_layer)
         optimizer = Nadam()
     else:
         LOG.err("Unknown model name: {}".format(args.model))
@@ -226,8 +229,8 @@ def main():
         "--model", type=str, metavar="MODEL", default="inception_model",
         help="Model type for training (Options: inception_model)")
     parser.add_argument(
-        "--weights", type=str, metavar="WEIGHTS", default=None,
-        help="Path to previously saved weights")
+        "--model_path", type=str, metavar="MODEL_PATH", default=None,
+        help="Path to previously saved model(*.hdf5)")
     parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=8,
         help="Number of samples in a mini-batch")
