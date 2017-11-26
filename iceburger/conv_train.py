@@ -15,7 +15,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
 from keras.models import Model
-from keras.optimizers import RMSprop, SGD
+from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -48,7 +48,7 @@ DROPOUT = 0.5
 
 #: Regularization
 L1L2R = 1E-3
-L2R = 5E-3
+L2R = 1E-3
 
 def get_callbacks(args,model_out_path):
     """
@@ -100,7 +100,8 @@ def compile_model(args, input_shape):
     if args.model.lower()=="conv2d_model":
         model = Conv2D_Model(weights=args.weights, include_top=True,
                               input_shape=input_shape)
-        optimizer = SGD(lr = 0.0001, momentum = 0.9)
+        optimizer = Adam()
+        #optimizer = SGD(lr = 0.001, momentum = 0.9)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
@@ -173,11 +174,11 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
         else:
             image_input = input_tensor
 
-    x = conv2d_bn(image_input, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(image_input, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn1")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn2")
-    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn3")
     x = MaxPooling2D(pool_size=(2, 2), name="pool1")(x)
 
@@ -189,11 +190,11 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
                   name = "conv2d_bn6")
     x = MaxPooling2D(pool_size=(2, 2), name="pool2")(x)
 
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn7")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn8")
-    x = conv2d_bn(x, NUM_CONV_FILTERS//4, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
+    x = conv2d_bn(x, NUM_CONV_FILTERS, CONV_FILTER_ROW, CONV_FILTER_COL, strides=(1,1),
                   name = "conv2d_bn9")
     x = MaxPooling2D(pool_size=(2, 2), name="pool3")(x)
     """
@@ -211,10 +212,10 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
     """
     #x = Dropout(DROPOUT, name="drop1")(x)
     if include_top:
-        x = Flatten(name="flatten1")(x)
-        x = Dense(NUM_DENSE, activation = "relu",
-                  W_regularizer=l2(L2R),
-                  b_regularizer=l2(L2R),
+        x = GlobalMaxPooling2D(name="globalmaxpool1")(x)
+        x = Dense(NUM_DENSE, activation="relu",
+                  kernel_regularizer=l2(L2R),
+                  bias_regularizer=l2(L2R),
                   name = "dense1")(x)
         x = Dropout(DROPOUT, name = "drop1")(x)
        # x = Dense(NUM_DENSE/2, activation = "relu", name = "dense2")(x)
@@ -222,8 +223,8 @@ def Conv2D_Model(include_top = True, weights=None, input_tensor = None,
        # x = Dense(NUM_DENSE/4, activation = "relu", name = "dense3")(x)
        # x = Dropout(DROPOUT, name = "drop3")(x)
         x = Dense(classes, activation="sigmoid",
-                  W_regularizer=l2(L2R),
-                  b_regularizer=l2(L2R),
+                  kernel_regularizer=l2(L2R),
+                  bias_regularizer=l2(L2R),
                   name="predictions")(x)
     else:
         if pooling == 'avg':
@@ -250,7 +251,7 @@ def train(args):
     :param args: arguments as parsed by argparse module
     """
     LOG.info("Loading data from {}".format(args.data))
-    X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
+    X, X_angle, y, subset = parse_json_data(os.path.join(args.data), padding="zeros")
     #w = 75
     #h = 75
     X_train = X[subset=='train']
@@ -263,7 +264,7 @@ def train(args):
     #nb_classes = ds.df.activity.nunique()
 
     LOG.info("Initiate model")
-    model = compile_model(args, input_shape=(75,75,3))
+    model = compile_model(args, input_shape=(75, 75, 3))
 
     LOG.info("Create sample generators")
     gen_train = ImageDataGenerator(horizontal_flip = True,
@@ -386,7 +387,7 @@ def main():
         help="Output path where parsed data set class to be saved")
     args = parser.parse_args()
 
-    model = train(args)
+    train(args)
 
     LOG.info("Done :)")
 
