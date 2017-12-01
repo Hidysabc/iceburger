@@ -21,7 +21,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape, concatenate)
 from keras.models import Model, load_model
-from keras.optimizers import RMSprop, SGD, Adam
+from keras.optimizers import RMSprop, SGD, Adam, Nadam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
@@ -112,7 +112,9 @@ def compile_model(args, input_shape):
         else:
             model = ResNet20(include_top=True,
                               input_shape=input_shape)
-        optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+        optimizer = Nadam()
+        #optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
+        #optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
@@ -318,48 +320,60 @@ def ResNet20(include_top=True, weights = None,
     x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D((3, 3), strides=(2, 2))(x)
+
     x = conv_block(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='b')
     x = identity_block(x, 3, [64, 64, 256], stage=2, block='c')
+
     x = conv_block(x, 3, [128, 128, 512], stage=3, block='a')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
-    """
+
     x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
-
+    """
     x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
-    x = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
+     = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
     """
-    x = AveragePooling2D((9,9), name = "avg_pool")(x)
+    #x = AveragePooling2D((18,18), name = "avg_pool")(x)
+    #x = AveragePooling2D((9,9), name = "avg_pool")(x)
     #x = AveragePooling2D((7, 7), name='avg_pool')(x)
+    x = AveragePooling2D((5,5), name="avg_pool")(x)
+    #x = AveragePooling2D((3,3), name="avg_pool")(x)
+    """
     input_2 = Input(shape=[1],name = "angle")
     angle_layer = Dense(1,)(input_2)
+    angle_layer = BatchNormalization(name="bn_angle" )(angle_layer)
     z = Lambda(cos_sin)(angle_layer)
+    """
     if include_top:
         x = Flatten()(x)
         #x = GlobalAveragePooling2D()(x)
         #merge = concatenate([x,input_2])
         #merge = concatenate([x,z])
-        merge = Lambda(incidence_angle_correction)([x,z])
-        merge = Flatten()(merge)
-        merge = Dense(512, name="fc1")(merge)
+        #z = BatchNormalization(name="bn_angle")(z)
+        #merge = Lambda(incidence_angle_correction)([x,z])
+        #merge = Flatten()(merge)
+        """
+        merge = Dense(512, name="fc1", kernel_regularizer=l2(L2R),
+                      bias_regularizer=l2(L2R))(x)
         merge = BatchNormalization(name = "bn_merge")(merge)
         merge = Activation("relu")(merge)
         merge = Dropout(DROPOUT)(merge)
+        """
         #merge = Dense(512, name="fc2")(merge)
         #merge = BatchNormalization(name = "bn_merge2")(merge)
         #merge = Activation("relu")(merge)
         #merge = Dropout(DROPOUT)(merge)
         x = Dense(classes, activation="sigmoid", name="fc2",
                   kernel_regularizer=l2(L2R),
-                  bias_regularizer=l2(L2R))(merge)
+                  bias_regularizer=l2(L2R))(x)
         #x = Dense(classes, activation='softmax', name='fc1000')(x)
     else:
         if pooling == 'avg':
@@ -372,8 +386,9 @@ def ResNet20(include_top=True, weights = None,
         inputs = get_source_inputs(input_tensor)
     else:
         inputs = img_input
-    # Create model.
-    model = Model(input=[inputs, input_2], output=x, name='resnet')
+    # Create imodel.
+    model = Model(input=inputs, output=x, name = "resnet")
+    #model = Model(input=[inputs, input_2], output=x, name='resnet')
     print(model.summary())
     # load weights
     if weights == 'imagenet':
@@ -417,9 +432,12 @@ def train(args):
     #w = 75
     #h = 75
     X_train = X[subset=='train']
+    #X_train_mean = np.mean(X_train, axis=0)
+    #X_train = X_train-X_train_mean
     X_angle_train = X_angle[subset=='train']
     y_train = y[subset=='train']
     X_valid = X[subset=='valid']
+    #X_valid = X_valid-X_train_mean
     X_angle_valid = X_angle[subset=='valid']
     y_valid = y[subset=='valid']
     #ds = DataSet.from_pickle(args.data)
@@ -431,10 +449,11 @@ def train(args):
     LOG.info("Create sample generators")
     gen_train = ImageDataGenerator(horizontal_flip = True,
                          vertical_flip = True,
-                         width_shift_range = 0.1,
-                         height_shift_range = 0.1,
-                         zoom_range = 0.1,
-                         rotation_range = 15)
+                         width_shift_range = 0,
+                         height_shift_range = 0,
+                         channel_shift_range = 0,
+                         zoom_range = 0.2,
+                         rotation_range = 10)
 
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
@@ -445,9 +464,11 @@ def train(args):
             X1i = genX1.next()
             yield X1i[0], X1i[1]
     """
+    #g_seed = int(input("Please provide a random integer ranging from 1 to 100000:"))
+    g_seed = np.random.randint(0,10000)
     def gen_flow_train_for_two_input(X1, X2, y1):
-        genX1 = gen_train.flow(X1, y1, batch_size= args.batch_size, seed=666)
-        genX2 = gen_train.flow(X1, X2, batch_size = args.batch_size, seed=666)
+        genX1 = gen_train.flow(X1, y1, batch_size= args.batch_size, seed=g_seed)
+        genX2 = gen_train.flow(X1, X2, batch_size = args.batch_size, seed=g_seed)
         while True:
             X1i = genX1.next()
             X2i = genX2.next()
@@ -455,10 +476,10 @@ def train(args):
 
 
     #Finally create out generator
-    #gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=666)
-    #gen_valid_ = gen_valid.flow(X_valid, y_valid, batch_size = args.batch_size, seed=666)
-    gen_train_ = gen_flow_train_for_two_input(X_train, X_angle_train, y_train)
-    gen_valid_ = gen_flow_train_for_two_input(X_valid, X_angle_valid, y_valid)
+    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed, shuffle=False)
+    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=False)
+    #gen_train_ = gen_flow_train_for_two_input(X_train, X_angle_train, y_train)
+    #gen_valid_ = gen_flow_train_for_two_input(X_valid, X_angle_valid, y_valid)
 
 
     LOG.info("Create callback functions")
@@ -541,7 +562,7 @@ def main():
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=5,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
         "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
