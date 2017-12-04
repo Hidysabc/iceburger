@@ -37,6 +37,10 @@ RUN mkdir -p $(jupyter --data-dir)/nbextensions && \
 
 RUN rm -rf /root/.cache/pip/*
 
+# install boto3
+RUN pip3 install boto3
+
+
 # install iceburger
 RUN cd /root && git clone https://github.com/Hidysabc/iceburger.git && \
     cd iceburger && pip install -e .

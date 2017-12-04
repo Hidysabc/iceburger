@@ -112,8 +112,8 @@ def compile_model(args, input_shape):
         else:
             model = ResNet20(include_top=True,
                               input_shape=input_shape)
-        optimizer = Nadam()
-        #optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
+        #optimizer = Nadam()
+        optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
         #optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
@@ -449,11 +449,11 @@ def train(args):
     LOG.info("Create sample generators")
     gen_train = ImageDataGenerator(horizontal_flip = True,
                          vertical_flip = True,
-                         width_shift_range = 0,
-                         height_shift_range = 0,
+                         width_shift_range = 0.2,
+                         height_shift_range = 0.2,
                          channel_shift_range = 0,
                          zoom_range = 0.2,
-                         rotation_range = 10)
+                         rotation_range = 45)
 
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
@@ -476,8 +476,8 @@ def train(args):
 
 
     #Finally create out generator
-    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed, shuffle=False)
-    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=False)
+    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed, shuffle=True)
+    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=True)
     #gen_train_ = gen_flow_train_for_two_input(X_train, X_angle_train, y_train)
     #gen_valid_ = gen_flow_train_for_two_input(X_valid, X_angle_valid, y_valid)
 
@@ -562,7 +562,7 @@ def main():
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=5,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
         "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
