@@ -41,7 +41,7 @@ logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
-s3bucket = "iceburger_data"
+s3bucket = "iceburger"
 input_dir = '/tmp/iceburger/'
 #PRJ = "/iceburger"
 #PRJ = os.getcwd()
@@ -490,8 +490,13 @@ def train(args):
 
     :param args: arguments as parsed by argparse module
     """
-    LOG.info("Loading data from {}".format(args.data))
-    X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
+    data_path = os.path.join(input_dir, args.data)
+    s3_client.download_file(s3bucket, args.data, data_path)
+    LOG.info("Loading data from {}".format(data_path))
+    X, X_angle, y, subset = parse_json_data(os.path.join(data_path))
+
+    #LOG.info("Loading data from {}".format(args.data))
+    #X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
     #w = 75
     #h = 75
     X_train = X[subset=='train']

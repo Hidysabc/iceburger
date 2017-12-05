@@ -449,11 +449,11 @@ def train(args):
     LOG.info("Create sample generators")
     gen_train = ImageDataGenerator(horizontal_flip = True,
                          vertical_flip = True,
-                         width_shift_range = 0.2,
-                         height_shift_range = 0.2,
+                         width_shift_range = 0.1,
+                         height_shift_range = 0.1,
                          channel_shift_range = 0,
                          zoom_range = 0.2,
-                         rotation_range = 45)
+                         rotation_range = 30)
 
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
