@@ -5,14 +5,14 @@ import logging
 import argparse
 import pandas as pd
 import sys
-
+import cv2
 from keras import backend as K
 from keras.models import load_model
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-predict'
 
-
+from iceburger.io import image_normalization
 logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
@@ -28,24 +28,7 @@ submission_csv_path = "./submission.csv"
 batch_size = 32
 """
 
-def image_normalization(x, percentile=1):
-    """Normalize the image signal value by rescale data
-    :param x: :class:`numpy.ndarray` of signal of dimension (height, width, 2)
-    :param percentile: signal greater or less than the percentile will be capped
-        as 1 and 0 respectively
-    :returns: :class:`numpy.ndarray` of normalized 3 channel image with last
-        channel totally black
-    """
-    vmax = np.percentile(x, 100 - percentile)
-    vmin = np.percentile(x, percentile)
-    x = (x - vmin) / (vmax - vmin)
-    x[x > 1] = 1
-    x[x < 0] = 0
-    return np.concatenate([x, np.zeros(x.shape[:2] + (1,))],
-                          axis=-1)[np.newaxis, :, :, :]
-
-
-def parse_test_json_data(json_filename):
+def parse_test_json_data(json_filename, percentile=1, padding="avg"):
     """Parse json data to generate trainable matrices
     :param json_filename: path to input json file
     :returns: a `tuple` of
@@ -62,7 +45,7 @@ def parse_test_json_data(json_filename):
                        axis=-1)[np.newaxis, :, :, :]
         for _, r in df.iterrows()], axis=0)
     ID = df.id.values
-    X = np.concatenate([image_normalization(x) for x in _X], axis=0)
+    X = np.concatenate([image_normalization(x, percentile, padding) for x in _X], axis=0)
     X_angle = df.inc_angle.values
     return (ID, X, X_angle)
 
@@ -75,6 +58,13 @@ def predict(args):
     ID, X_test, X_angle_test = parse_test_json_data(args.test)
     LOG.info("Loading model from {}".format(args.model_path))
     model = load_model(args.model_path)
+    LOG.info("Checking Input Shape...")
+    model_input_shape = model.input_shape
+    LOG.info("Model_shape is {}".format(model_input_shape))
+    if (model_input_shape[1]!=75 or model_input_shape[2]!=75):
+        w = model_input_shape[1]
+        h = model_input_shape[2]
+        X_test = np.array([cv2.resize(x, (w, h)) for x in X_test])
     LOG.info("Start predicting...")
     prediction = model.predict(X_test,verbose = 1, batch_size = args.batch_size)
     submission = pd.DataFrame({"id": ID,

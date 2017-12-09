@@ -1,10 +1,15 @@
 """
 Functions related to file IO and data preprocessing
 """
-
 import numpy as np
 import pandas as pd
 
+# An image clearing dependencies
+from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
+                                 denoise_wavelet, estimate_sigma,
+                                 denoise_tv_bregman, denoise_nl_means)
+from skimage.filters import gaussian
+from skimage.color import rgb2gray
 
 def image_normalization(x, percentile=1, pad_channel="zeros"):
     """Normalize the image signal value by rescale data
@@ -55,3 +60,14 @@ def parse_json_data(json_filename, percentile=1, padding="zeros"):
         subset = np.array(["train"] * len(y))
 
     return (X, X_angle, y, subset)
+
+def denoise(X, weight, multichannel):
+    return np.asarray([denoise_tv_chambolle(x, weight=weight, multichannel=multichannel) for x in X])
+
+def smooth(X, sigma):
+    return np.asarray([gaussian(x, sigma=sigma) for x in X])
+
+def grayscale(X):
+    return np.asarray([rgb2gray(x) for x in X])
+
+
