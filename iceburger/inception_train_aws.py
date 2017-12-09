@@ -26,10 +26,13 @@ from keras.applications import imagenet_utils
 from keras.applications.imagenet_utils import decode_predictions
 from keras.applications.imagenet_utils import _obtain_input_shape
 import warnings
+import boto3
 
 WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.5/inception_v3_weights_tf_dim_ordering_tf_kernels.h5'
 WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.5/inception_v3_weights_tf_dim_ordering_tf_kernels_notop.h5'
+
 from iceburger.io import parse_json_data
+from iceburger.callbacks import ModelCheckpointS3
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-inception-train'
@@ -38,9 +41,16 @@ logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
+s3bucket = "iceburger"
+input_dir = '/tmp/iceburger/'
 #PRJ = "/iceburger"
 #PRJ = os.getcwd()
 #DATA = os.path.join(PRJ, "data/processed")
+s3 = boto3.resource('s3')
+bucket = s3.Bucket(s3bucket)
+s3_client = boto3.client('s3')
+
+
 
 #: Number filters convolutional layers
 NUM_CONV_FILTERS = 128
@@ -74,7 +84,7 @@ def get_callbacks(args,model_out_path):
 
     # save best model so far
     callbacks.append(
-        ModelCheckpoint(
+        ModelCheckpointS3(
             filepath=os.path.join(model_out_path, checkpoint_name),
             monitor="val_loss",
             verbose=1,
@@ -114,7 +124,9 @@ def compile_model(args, input_shape):
     LOG.info("Learning rate: {}".format(lr))
     if args.model.lower()=="inception_model":
         if args.model_path:
-            model = load_model(args.model_path)
+            model_path = os.path.join(input_dir, args.model_path)
+            s3_client.download_file(s3bucket, args.model_path, model_path)
+            model = load_model(model_path)
         else:
             model = Inception_Model(include_top=True,
                               input_shape=input_shape)
@@ -478,8 +490,13 @@ def train(args):
 
     :param args: arguments as parsed by argparse module
     """
-    LOG.info("Loading data from {}".format(args.data))
-    X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
+    data_path = os.path.join(input_dir, args.data)
+    s3_client.download_file(s3bucket, args.data, data_path)
+    LOG.info("Loading data from {}".format(data_path))
+    X, X_angle, y, subset = parse_json_data(os.path.join(data_path))
+
+    #LOG.info("Loading data from {}".format(args.data))
+    #X, X_angle, y, subset = parse_json_data(os.path.join(args.data))
     #w = 75
     #h = 75
     X_train = X[subset=='train']
@@ -553,6 +570,13 @@ def train(args):
         os.path.join(model_out_path, checkpoint_model_name),
         os.path.join(args.outpath, best_model_name)
     )
+    copy_source = {
+            "Bucket": s3bucket,
+            "Key": "{mn}-best_val_loss.hdf5".format(mn=args.model)
+    }
+
+    s3_client.copy(copy_source, s3bucket, best_model_name)
+
 
     LOG.info("Saving final model ...")
     LOG.info("  Final validation score: {:.4f}".format(
@@ -568,6 +592,7 @@ def train(args):
         val_acc=history.history["val_acc"][-1]
     )
     model.save(os.path.join(args.outpath, final_file_root+'.hdf5'))
+    s3_client.upload_file(os.path.join(args.outpath, final_file_root+'.hdf5'), s3bucket, final_file_root+'.hdf5')
 
 def main():
     parser = argparse.ArgumentParser(
