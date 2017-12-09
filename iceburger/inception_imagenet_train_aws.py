@@ -57,7 +57,7 @@ DROPOUT = 0.5
 
 #: Regularization
 L1L2R = 1E-3
-L2R = 5E-3
+L2R = 1E-3
 
 
 def get_callbacks(args, model_out_path):
@@ -119,9 +119,14 @@ def compile_model(args, input_shape):
             inception = InceptionV3(include_top=False, input_shape=input_shape)
             last_mix = inception.get_layer(name="mixed10")
             top_layer = GlobalAveragePooling2D(name='avg_pool')(last_mix.output)
-            top_layer = Dense(1, activation="sigmoid", name="predictions")(top_layer)
+            top_layer = Dense(1, activation="sigmoid",
+                              kernel_regularizer=l2(L2R),
+                              bias_regularizer=l2(L2R),
+                              name="predictions")(top_layer)
             model = Model(inputs=inception.input, outputs=top_layer)
-        optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
+            print(model.summary())
+        optimizer = Nadam()
+        #optimizer = SGD(lr=1e-5, decay=1e-4, momentum=0.9, nesterov=True)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
@@ -279,7 +284,7 @@ def main():
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=10,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
         "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
