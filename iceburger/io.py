@@ -6,7 +6,6 @@ import pandas as pd
 
 # An image clearing dependencies
 from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_wavelet, estimate_sigma,
                                  denoise_tv_bregman, denoise_nl_means)
 from skimage.filters import gaussian
 from skimage.color import rgb2gray
