@@ -33,7 +33,7 @@ RUN cd /opt && wget -O opencv_contrib.zip https://github.com/Itseez/opencv_contr
 
 RUN apt-get install -y git-core
 
-RUN pip3 install numpy keras pandas h5py versioneer && \
+RUN pip3 install numpy keras pandas h5py versioneer scikit-image && \
     pip3 install boto3 && \
     pip3 install tensorflow-gpu && \
     rm -rf /root/.cache/pip/*

@@ -122,4 +122,4 @@ class ModelCheckpointS3(Callback):
                     print('Epoch %05d: %s improved from %0.5f to %0.5f,'
                                   ' saving model to S3 %s'
                                   % (epoch, self.monitor, self.best,
-									current, filepath))
+                                     current, filepath))

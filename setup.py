@@ -36,7 +36,8 @@ setup(name="iceburger",
               "iceburger-resnet20-train=iceburger.resnet20_train:main",
               "iceburger-predict=iceburger.predict:main",
               "iceburger-fconv2d-train=iceburger.fconv_train:main",
-              "iceburger-inception-train-aws=iceburger.inception_imagenet_train_aws:main"
+              "iceburger-inception-train-aws=iceburger.inception_imagenet_train_aws:main",
+              "iceburger-composite-train=iceburger.composite_model:main"
            ]
       },
       include_package_data=True,
