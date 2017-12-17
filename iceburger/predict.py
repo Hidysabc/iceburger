@@ -28,7 +28,7 @@ submission_csv_path = "./submission.csv"
 batch_size = 32
 """
 
-def parse_test_json_data(json_filename, percentile=1, padding="avg"):
+def parse_test_json_data(json_filename, percentile=1, padding="zeros"):
     """Parse json data to generate trainable matrices
     :param json_filename: path to input json file
     :returns: a `tuple` of
@@ -55,7 +55,7 @@ def predict(args):
     :param args: arguments as parsed by argparse module
     """
     LOG.info("Loading data from {}".format(args.test))
-    ID, X_test, X_angle_test = parse_test_json_data(args.test)
+    ID, X_test, X_angle_test = parse_test_json_data(args.test,padding=args.padding)
     LOG.info("Loading model from {}".format(args.model_path))
     model = load_model(args.model_path)
     LOG.info("Checking Input Shape...")
@@ -81,6 +81,9 @@ def main():
     parser.add_argument(
         "model_path", type=str, metavar="MODEL_PATH",
         help="Path to previously saved model")
+    parser.add_argument(
+        "--padding", type=str, metavar="PADDING", default="zeros",
+        help="Padding arg for parse_test_json_data")
     parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")

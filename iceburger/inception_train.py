@@ -118,7 +118,8 @@ def compile_model(args, input_shape):
         else:
             model = Inception_Model(include_top=True,
                               input_shape=input_shape)
-        optimizer = Nadam()
+        optimizer = SGD(lr=1e-4, momentum=0.9, nesterov=True)
+        #optimizer = Nadam()
         #optimizer = Adam(lr=lr)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
@@ -292,7 +293,7 @@ def Inception_Model(include_top=True,
         [branch1x1, branch5x5, branch3x3dbl, branch_pool],
         axis=channel_axis,
         name='mixed1')
-
+    """
     # mixed 2: 35 x 35 x 256
     branch1x1 = conv2d_bn(x, 64, 1, 1)
 
@@ -424,6 +425,7 @@ def Inception_Model(include_top=True,
             [branch1x1, branch3x3, branch3x3dbl, branch_pool],
             axis=channel_axis,
             name='mixed' + str(9 + i))
+        """
     if include_top:
         # Classification block
         x = GlobalAveragePooling2D(name='avg_pool')(x)
