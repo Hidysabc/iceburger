@@ -32,6 +32,7 @@ setup(name="iceburger",
       entry_points={
           "console_scripts": [
               "iceburger-conv2d-train=iceburger.conv_train:main",
+	      "iceburger-inception-train-small=iceburger.inception_train:main",
               "iceburger-inception-train=iceburger.inception_imagenet_train:main",
               "iceburger-resnet20-train=iceburger.resnet20_train:main",
               "iceburger-predict=iceburger.predict:main",
