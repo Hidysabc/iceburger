@@ -20,7 +20,7 @@ from keras.models import Model, load_model
 from keras.optimizers import Adam, SGD, Nadam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from keras.utils.data_utils import get_file
 from keras.applications import imagenet_utils
 from keras.applications.imagenet_utils import decode_predictions
@@ -59,10 +59,7 @@ DROPOUT = 0.5
 L1L2R = 1E-3
 L2R = 5E-3
 
-#: Optimizer learning rate
-lr = 1E-3
-
-def get_callbacks(args,model_out_path):
+def get_callbacks(args, model_out_path):
     """
     Create list of callback functions for fitting step
     :param args: arguments as parsed by argparse module
@@ -101,6 +98,11 @@ def get_callbacks(args,model_out_path):
             )
         )
 
+    if args.cb_lr_scheduler:
+        callbacks.append(
+            LearningRateScheduler(lambda epoch: args.lr / (100 ** (epoch // 20)))
+        )
+
     return callbacks, checkpoint_name
 
 
@@ -110,20 +112,20 @@ def compile_model(args, input_shape):
     :param args: arguments as parsed by argparse module
     :returns: `keras.models.Model` of compiled model
     """
-    #lr = 1e-2
-    LOG.info("Learning rate: {}".format(lr))
+    lr = args.lr
     if args.model.lower()=="inception_model":
         if args.model_path:
             model = load_model(args.model_path)
         else:
             model = Inception_Model(include_top=True,
                               input_shape=input_shape)
-        optimizer = SGD(lr=1e-4, momentum=0.9, nesterov=True)
+        optimizer = SGD(lr=lr, momentum=0.9, nesterov=True)
         #optimizer = Nadam()
         #optimizer = Adam(lr=lr)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
+    LOG.info("Learning rate: {}".format(optimizer.get_config()["lr"]))
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy',
                   metrics=['accuracy'])
@@ -502,7 +504,7 @@ def train(args):
                          width_shift_range = 0.1,
                          height_shift_range = 0.1,
                          zoom_range = 0.1,
-                         rotation_range = 45)
+                         rotation_range = 180)
 
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
@@ -515,8 +517,8 @@ def train(args):
     """
     g_seed = np.random.randint(1,10000)
     #Finally create out generator
-    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed)
-    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed)
+    gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed, shuffle=True)
+    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=False)
     #gen_train_ = gen_flow_train_for_one_input(X_train, y_train)
     #gen_valid_ = gen_flow_valid_for_one_input(X_valid, y_valid)
 
@@ -584,13 +586,16 @@ def main():
         "--model_path", type=str, metavar="MODEL_PATH", default=None,
         help="Path to previously saved model(*.hdf5)")
     parser.add_argument(
+        "--lr", type=float, metavar="LEARNING_RATE", default=1e-3,
+        help="Initial learning rate")
+    parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
     parser.add_argument(
         "--epochs", type=int, metavar="EPOCHS", default=1000,
         help="Number of epochs")
     parser.add_argument(
-        "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
+        "--train_steps", type=int, metavar="TRAIN_STEPS", default=256,
         help=("Number of mini-batches for each epoch to pass through during"
               " training"))
     parser.add_argument(
@@ -598,13 +603,16 @@ def main():
         help=("Number of mini-batches for each epoch to pass through during"
               " validation"))
     parser.add_argument(
+        "--cb_lr_scheduler", action="store_true",
+        help="Flag to determine whether to use learning rate scheduler")
+    parser.add_argument(
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=10,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
-        "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
+        "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.8,
         help=("Factor for reducing learning rate. Only activated when"
               " `cb_reduce_lr` is set"))
     parser.add_argument(
