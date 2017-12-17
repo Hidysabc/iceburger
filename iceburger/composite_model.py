@@ -13,6 +13,7 @@ import warnings
 
 from keras import backend as K
 from keras import layers
+from keras.constraints import non_neg
 from keras.layers.core import Lambda
 from keras.layers.merge import Concatenate
 from keras.utils import layer_utils
@@ -39,7 +40,7 @@ LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
 
 #: Number neurons dense layers
-NUM_DENSE = 1024
+NUM_DENSE = 512
 
 #: Dropout ratio
 DROPOUT = 0.5
@@ -96,9 +97,9 @@ def compile_model(args, input_shape):
     :returns: `keras.models.Model` of compiled model
     """
     model_configs = json.load(open(args.model_configs, "r"))
-    model = CompositeModel(model_configs, input_shape=input_shape)
-    #optimizer = Nadam()
-    optimizer = SGD(lr=1e-4, decay=1e-4, momentum=0.9, nesterov=True)
+    model, optimizer = CompositeModel(model_configs, input_shape=input_shape)
+    optimizer = Adam(lr=5e-5)
+    #optimizer = SGD(lr=1e-4, momentum=0.9, nesterov=True)
     #optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
 
     model.compile(optimizer=optimizer,
@@ -122,8 +123,7 @@ def CompositeModel(model_configs, input_shape, classes=1):
         submodels.append(Model(input_tensor, output_tensor)(inputs))
 
     x = Concatenate()(submodels)
-    x = BatchNormalization()(x)
-    x = Dropout(DROPOUT)(x)
+    optimizer = models["resnet"].optimizer
     x = Dense(NUM_DENSE, activation="relu")(x)
     x = Dropout(DROPOUT)(x)
     x = Dense(NUM_DENSE, activation="relu")(x)
@@ -137,7 +137,7 @@ def CompositeModel(model_configs, input_shape, classes=1):
     model = Model(input=inputs, output=output, name = "composite")
 
     model.summary()
-    return model
+    return model, optimizer
 
 
 def train(args):
@@ -166,6 +166,14 @@ def train(args):
                          zoom_range = 0.2,
                          rotation_range = 30)
 
+    gen_valid = ImageDataGenerator(horizontal_flip = False,
+                         vertical_flip = False,
+                         width_shift_range = 0.0,
+                         height_shift_range = 0.0,
+                         channel_shift_range = 0,
+                         zoom_range = 0.0,
+                         rotation_range = 0)
+
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
     """
@@ -188,7 +196,7 @@ def train(args):
 
     #Finally create out generator
     gen_train_ = gen_train.flow(X_train, y_train, batch_size = args.batch_size, seed=g_seed, shuffle=True)
-    gen_valid_ = gen_train.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=True)
+    gen_valid_ = gen_valid.flow(X_valid, y_valid, batch_size = args.batch_size, seed=g_seed, shuffle=False)
     #gen_train_ = gen_flow_train_for_two_input(X_train, X_angle_train, y_train)
     #gen_valid_ = gen_flow_train_for_two_input(X_valid, X_angle_valid, y_valid)
 
@@ -256,24 +264,24 @@ def main():
         "--model_configs", type=str, metavar="MODEL_CONFIG", default=None,
         help="Path to a config file in .json indicating which model to use")
     parser.add_argument(
-        "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
+        "--batch_size", type=int, metavar="BATCH_SIZE", default=64,
         help="Number of samples in a mini-batch")
     parser.add_argument(
         "--epochs", type=int, metavar="EPOCHS", default=1000,
         help="Number of epochs")
     parser.add_argument(
-        "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
+        "--train_steps", type=int, metavar="TRAIN_STEPS", default=64,
         help=("Number of mini-batches for each epoch to pass through during"
               " training"))
     parser.add_argument(
-        "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
+        "--valid_steps", type=int, metavar="VALID_STEPS", default=64,
         help=("Number of mini-batches for each epoch to pass through during"
               " validation"))
     parser.add_argument(
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=50,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
         "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,

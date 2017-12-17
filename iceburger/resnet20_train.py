@@ -112,8 +112,9 @@ def compile_model(args, input_shape):
         else:
             model = ResNet20(include_top=True,
                               input_shape=input_shape)
-        #optimizer = Nadam()
-        optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
+        #optimizer = Adam()
+        optimizer = Nadam()
+        #optimizer = SGD(lr=1e-3, decay=1e-4, momentum=0.9, nesterov=True)
         #optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
@@ -329,14 +330,14 @@ def ResNet20(include_top=True, weights = None,
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='b')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='c')
     x = identity_block(x, 3, [128, 128, 512], stage=3, block='d')
-
+    """
     x = conv_block(x, 3, [256, 256, 1024], stage=4, block='a')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='b')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='c')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='d')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='e')
     x = identity_block(x, 3, [256, 256, 1024], stage=4, block='f')
-    """
+
     x = conv_block(x, 3, [512, 512, 2048], stage=5, block='a')
      = identity_block(x, 3, [512, 512, 2048], stage=5, block='b')
     x = identity_block(x, 3, [512, 512, 2048], stage=5, block='c')
@@ -344,7 +345,7 @@ def ResNet20(include_top=True, weights = None,
     #x = AveragePooling2D((18,18), name = "avg_pool")(x)
     #x = AveragePooling2D((9,9), name = "avg_pool")(x)
     #x = AveragePooling2D((7, 7), name='avg_pool')(x)
-    x = AveragePooling2D((5,5), name="avg_pool")(x)
+    #x = AveragePooling2D((5,5), name="avg_pool")(x)
     #x = AveragePooling2D((3,3), name="avg_pool")(x)
     """
     input_2 = Input(shape=[1],name = "angle")
@@ -353,8 +354,9 @@ def ResNet20(include_top=True, weights = None,
     z = Lambda(cos_sin)(angle_layer)
     """
     if include_top:
-        x = Flatten()(x)
-        #x = GlobalAveragePooling2D()(x)
+        #x = Flatten()(x)
+        x = GlobalAveragePooling2D()(x)
+        #x = GlobalMaxPooling2D()(x)
         #merge = concatenate([x,input_2])
         #merge = concatenate([x,z])
         #z = BatchNormalization(name="bn_angle")(z)
@@ -367,13 +369,13 @@ def ResNet20(include_top=True, weights = None,
         merge = Activation("relu")(merge)
         merge = Dropout(DROPOUT)(merge)
         """
-        #merge = Dense(512, name="fc2")(merge)
-        #merge = BatchNormalization(name = "bn_merge2")(merge)
-        #merge = Activation("relu")(merge)
-        #merge = Dropout(DROPOUT)(merge)
-        x = Dense(classes, activation="sigmoid", name="fc2",
+        merge = Dense(512, name="fc2")(x)
+        merge = BatchNormalization(name = "bn_merge2")(merge)
+        merge = Activation("relu")(merge)
+        merge = Dropout(DROPOUT)(merge)
+        x = Dense(classes, activation="sigmoid", name="predictions",
                   kernel_regularizer=l2(L2R),
-                  bias_regularizer=l2(L2R))(x)
+                  bias_regularizer=l2(L2R))(merge)
         #x = Dense(classes, activation='softmax', name='fc1000')(x)
     else:
         if pooling == 'avg':
@@ -545,17 +547,17 @@ def main():
         "--model_path", type=str, metavar="MODEL_PATH", default=None,
         help="Path to previously saved model(*.hdf5)")
     parser.add_argument(
-        "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
+        "--batch_size", type=int, metavar="BATCH_SIZE", default=64,
         help="Number of samples in a mini-batch")
     parser.add_argument(
         "--epochs", type=int, metavar="EPOCHS", default=1000,
         help="Number of epochs")
     parser.add_argument(
-        "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
+        "--train_steps", type=int, metavar="TRAIN_STEPS", default=64,
         help=("Number of mini-batches for each epoch to pass through during"
               " training"))
     parser.add_argument(
-        "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
+        "--valid_steps", type=int, metavar="VALID_STEPS", default=64,
         help=("Number of mini-batches for each epoch to pass through during"
               " validation"))
     parser.add_argument(
