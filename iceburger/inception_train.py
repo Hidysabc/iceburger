@@ -100,7 +100,7 @@ def get_callbacks(args, model_out_path):
 
     if args.cb_lr_scheduler:
         callbacks.append(
-            LearningRateScheduler(lambda epoch: args.lr / (100 ** (epoch // 20)))
+            LearningRateScheduler(lambda epoch: args.lr / (10 ** (epoch // 10)))
         )
 
     return callbacks, checkpoint_name
@@ -295,7 +295,7 @@ def Inception_Model(include_top=True,
         [branch1x1, branch5x5, branch3x3dbl, branch_pool],
         axis=channel_axis,
         name='mixed1')
-    """
+
     # mixed 2: 35 x 35 x 256
     branch1x1 = conv2d_bn(x, 64, 1, 1)
 
@@ -312,7 +312,7 @@ def Inception_Model(include_top=True,
         [branch1x1, branch5x5, branch3x3dbl, branch_pool],
         axis=channel_axis,
         name='mixed2')
-
+    """
     # mixed 3: 17 x 17 x 768
     #branch3x3 = conv2d_bn(x, 384, 3, 3, strides=(2, 2), padding='valid')
     branch3x3 = conv2d_bn(x, 384, 3, 3, strides=(1, 1), padding='valid')
@@ -504,7 +504,7 @@ def train(args):
                          width_shift_range = 0.1,
                          height_shift_range = 0.1,
                          zoom_range = 0.1,
-                         rotation_range = 180)
+                         rotation_range = 30)
 
     # Here is the function that merges our two generators
     # We use the exact same generator with the same random seed for both the y and angle arrays
@@ -609,7 +609,7 @@ def main():
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
         help="Number of epochs for early stop if without improvement")
     parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=3,
+        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=50,
         help="Number of epochs to reduce learning rate without improvement")
     parser.add_argument(
         "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.8,
