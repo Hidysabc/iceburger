@@ -8,10 +8,11 @@ import pandas as pd
 import sys
 import shutil
 from keras import backend as K
+from keras import layers
 from keras.engine.topology import get_source_inputs
 from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           Dense, Dropout, Flatten, GlobalAveragePooling2D,
-                          GlobalMaxPooling2D, MaxPooling2D, Permute,
+                          AveragePooling2D, GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
 from keras.layers.merge import Concatenate
 from keras.models import Model, load_model
@@ -54,8 +55,12 @@ weight_gray=0.05
 DROPOUT_fcnn=0.2
 DROPOUT_combined=0.3
 """
-DROPOUT_fcnn=0.2
-DROPOUT_combined=0.4
+DROPOUT_resnet=0.4
+DROPOUT_combined=0.5
+
+#: Regularization
+L2R = 5E-3
+
 def create_dataset(json_filename, labeled, smooth_rgb=0.2, smooth_gray=0.2,
                    weight_rgb=0.1, weight_gray=0.1):
     df = pd.read_json(json_filename)
@@ -93,10 +98,117 @@ def create_dataset(json_filename, labeled, smooth_rgb=0.2, smooth_gray=0.2,
         y = None
     return y, band, images
 
-def get_model_notebook(lr, decay, channels, relu_type='relu'):
-    # angle variable defines if we should use angle parameter or ignore it
-    input_1 = Input(shape=(75, 75, channels))
+def identity_block(input_tensor, kernel_size, filters, stage, block):
+    """The identity block is the block that has no conv layer at shortcut.
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+    # Returns
+        Output tensor for the block.
+    """
+    filters1, filters2, filters3 = filters
+    if K.image_data_format() == 'channels_last':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    x = Conv2D(filters1, (1, 1), name=conv_name_base + '2a')(input_tensor)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters2, kernel_size,
+               padding='same', name=conv_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+    x = layers.add([x, input_tensor])
+    x = Activation('relu')(x)
+    return x
 
+
+def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
+    """A block that has a conv layer at shortcut.
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+    # Returns
+        Output tensor for the block.
+    Note that from stage 3, the first conv layer at main path is with strides=(2,2)
+    And the shortcut should have strides=(2,2) as well
+    """
+    filters1, filters2, filters3 = filters
+    if K.image_data_format() == 'channels_last':
+        bn_axis = 3
+    else:
+        bn_axis = 1
+    conv_name_base = 'res' + str(stage) + block + '_branch'
+    bn_name_base = 'bn' + str(stage) + block + '_branch'
+    x = Conv2D(filters1, (1, 1), strides=strides,
+              name=conv_name_base + '2a')(input_tensor)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters2, kernel_size, padding='same',
+               name=conv_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = Activation('relu')(x)
+    x = Conv2D(filters3, (1, 1), name=conv_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+    shortcut = Conv2D(filters3, (1, 1), strides=strides,
+                      name=conv_name_base + '1')(input_tensor)
+    shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+    x = layers.add([x, shortcut])
+    x = Activation('relu')(x)
+    return x
+
+
+def get_model_notebook(lr, decay, channels, relu_type='relu'):
+	# angle variable defines if we should use angle parameter or ignore it
+	img_input = Input(shape=(75, 75, channels))
+	resnet = Conv2D(64, (3, 3), strides=(2, 2), padding='same', name='conv1')(img_input)
+	resnet = BatchNormalization(axis=3, name='bn_conv1')(resnet)
+	resnet = Activation(relu_type)(resnet)
+	resnet = MaxPooling2D((3, 3), strides=(2, 2))(resnet)
+	#resnet= Dropout(DROPOUT_resnet)(resnet)
+	resnet = conv_block(resnet, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+	resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='b')
+	resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='c')
+	#resnet= Dropout(DROPOUT_resnet)(resnet)
+	resnet = conv_block(resnet, 3, [128, 128, 512], stage=3, block='a')
+	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='b')
+	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='c')
+	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='d')
+	#resnet = MaxPooling2D((2, 2), strides=(2, 2))(resnet)
+	#resnet = Dropout(DROPOUT_resnet)(resnet)
+	#resnet = BatchNormalization()(resnet)
+	resnet = AveragePooling2D((9,9), name = "avg_pool")(resnet)
+	resnet = Flatten()(resnet)
+	#resnet = GlobalAveragePooling2D()(resnet)
+	#local_input = img_input
+	partial_model = Model(img_input, resnet)
+	LOG.info("Partial_model_summary:")
+	partial_model.summary()
+	#dense = Dense(512, name="fc1")(resnet)
+	#dense = BatchNormalization(name = "bn_fc1")(dense)
+	#dense = Activation(relu_type)(dense)
+	#dense = Dropout(DROPOUT_resnet)(dense)
+	dense = Dropout(DROPOUT_resnet)(resnet)
+	dense = Dense(256, activation=relu_type)(dense)
+	dense = Dropout(DROPOUT_resnet)(dense)
+	dense = Dense(128, activation=relu_type)(dense)
+	dense = Dropout(DROPOUT_resnet)(dense)
+	#dense = Dense(64, activation=relu_type)(dense)
+	#dense = Dropout(DROPOUT_resnet)(dense)
+	output = Dense(1, activation="sigmoid", name="predictions",
+              kernel_regularizer=l2(L2R),
+              bias_regularizer=l2(L2R))(dense)
+	"""
     fcnn = Conv2D(32, kernel_size=(3, 3), activation=relu_type)(
         BatchNormalization()(input_1))
     fcnn = MaxPooling2D((3, 3))(fcnn)
@@ -123,10 +235,15 @@ def get_model_notebook(lr, decay, channels, relu_type='relu'):
     dense = Dropout(DROPOUT_fcnn)(dense)
     # For some reason i've decided not to normalize angle data
     output = Dense(1, activation="sigmoid")(dense)
-    model = Model(local_input, output)
-    optimizer = Adam(lr=lr, decay=decay)
-    model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
-    return model, partial_model
+    """
+	model = Model(img_input, output)
+	LOG.info("model summary:")
+	model.summary()
+	#model = Model(local_input, output)
+	optimizer = Adam(lr=lr, decay=decay)
+	model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
+	return model, partial_model
+
 
 def combined_model(m_b, m_img, lr, decay):
     input_b = Input(shape=(75, 75, 3))
@@ -240,7 +357,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         model_out_path = os.path.join(os.path.abspath(args.outpath),"checkpoints")
         if not os.path.exists(model_out_path):
             os.makedirs(model_out_path)
-        checkpoint_name= "{mn}-best_val_loss.hdf5".format(mn="model_b")
+        checkpoint_name= "{mn}-resnet-best_val_loss.hdf5".format(mn="model_b")
         model_b_outpath = os.path.join(model_out_path, checkpoint_name)
         model_b, model_b_cut = gen_model_weights(lr, 1e-6, 3, 'relu', batch_size, max_epoch, model_b_outpath,
                                                  data=data_b1, verbose=verbose)
@@ -253,7 +370,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         model_out_path = os.path.join(os.path.abspath(args.outpath),"checkpoints")
         if not os.path.exists(model_out_path):
             os.makedirs(model_out_path)
-        checkpoint_name= "{mn}-best_val_loss.hdf5".format(mn="model_img")
+        checkpoint_name= "{mn}-resnet-best_val_loss.hdf5".format(mn="model_img")
         model_img_outpath = os.path.join(model_out_path, checkpoint_name)
         model_images, model_images_cut = gen_model_weights(lr, 1e-6, 3, 'relu', batch_size, max_epoch, model_img_outpath,
                                                        data_images, verbose=verbose)
@@ -268,7 +385,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         model_out_path = os.path.join(os.path.abspath(args.outpath),"checkpoints")
         if not os.path.exists(model_out_path):
             os.makedirs(model_out_path)
-        checkpoint_name= "{mn}-best_val_loss.hdf5".format(mn="model_common")
+        checkpoint_name= "{mn}-resnet-best_val_loss.hdf5".format(mn="model_common")
         model_common_outpath = os.path.join(model_out_path, checkpoint_name)
         if verbose > 0:
             print('Training common network')
@@ -337,7 +454,7 @@ def main():
     y_train, X_b, X_images = create_dataset(args.data, True)
     # baseline parameters
     #common_model = train_models(args,(y_train, X_b, X_images), 7e-04, args.batch_size, 50, 1, return_model=True)
-    common_model = train_models(args,(y_train, X_b, X_images), 3e-04, args.batch_size, 300, 1, return_model=True)
+    common_model = train_models(args,(y_train, X_b, X_images), 3e-4, args.batch_size, 100, 1, return_model=True)
 
     LOG.info("Done :)")
 
