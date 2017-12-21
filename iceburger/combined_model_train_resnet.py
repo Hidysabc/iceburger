@@ -19,7 +19,7 @@ from keras.models import Model, load_model
 from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.regularizers import l2
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, LearningRateScheduler
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from iceburger.io import parse_json_data,color_composite, smooth, denoise, grayscale
@@ -169,46 +169,46 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
 
 
 def get_model_notebook(lr, decay, channels, relu_type='relu'):
-	# angle variable defines if we should use angle parameter or ignore it
-	img_input = Input(shape=(75, 75, channels))
-	resnet = Conv2D(64, (3, 3), strides=(2, 2), padding='same', name='conv1')(img_input)
-	resnet = BatchNormalization(axis=3, name='bn_conv1')(resnet)
-	resnet = Activation(relu_type)(resnet)
-	resnet = MaxPooling2D((3, 3), strides=(2, 2))(resnet)
-	#resnet= Dropout(DROPOUT_resnet)(resnet)
-	resnet = conv_block(resnet, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
-	resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='b')
-	resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='c')
-	#resnet= Dropout(DROPOUT_resnet)(resnet)
-	resnet = conv_block(resnet, 3, [128, 128, 512], stage=3, block='a')
-	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='b')
-	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='c')
-	resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='d')
-	#resnet = MaxPooling2D((2, 2), strides=(2, 2))(resnet)
-	#resnet = Dropout(DROPOUT_resnet)(resnet)
-	#resnet = BatchNormalization()(resnet)
-	resnet = AveragePooling2D((9,9), name = "avg_pool")(resnet)
-	resnet = Flatten()(resnet)
-	#resnet = GlobalAveragePooling2D()(resnet)
-	#local_input = img_input
-	partial_model = Model(img_input, resnet)
-	LOG.info("Partial_model_summary:")
-	partial_model.summary()
-	#dense = Dense(512, name="fc1")(resnet)
-	#dense = BatchNormalization(name = "bn_fc1")(dense)
-	#dense = Activation(relu_type)(dense)
-	#dense = Dropout(DROPOUT_resnet)(dense)
-	dense = Dropout(DROPOUT_resnet)(resnet)
-	dense = Dense(256, activation=relu_type)(dense)
-	dense = Dropout(DROPOUT_resnet)(dense)
-	dense = Dense(128, activation=relu_type)(dense)
-	dense = Dropout(DROPOUT_resnet)(dense)
-	#dense = Dense(64, activation=relu_type)(dense)
-	#dense = Dropout(DROPOUT_resnet)(dense)
-	output = Dense(1, activation="sigmoid", name="predictions",
+    # angle variable defines if we should use angle parameter or ignore it
+    img_input = Input(shape=(75, 75, channels))
+    resnet = Conv2D(64, (3, 3), strides=(2, 2), padding='same', name='conv1')(img_input)
+    resnet = BatchNormalization(axis=3, name='bn_conv1')(resnet)
+    resnet = Activation(relu_type)(resnet)
+    resnet = MaxPooling2D((3, 3), strides=(2, 2))(resnet)
+    #resnet= Dropout(DROPOUT_resnet)(resnet)
+    resnet = conv_block(resnet, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+    resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='b')
+    resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='c')
+    #resnet= Dropout(DROPOUT_resnet)(resnet)
+    resnet = conv_block(resnet, 3, [128, 128, 512], stage=3, block='a')
+    resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='b')
+    resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='c')
+    resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='d')
+    #resnet = MaxPooling2D((2, 2), strides=(2, 2))(resnet)
+    #resnet = Dropout(DROPOUT_resnet)(resnet)
+    #resnet = BatchNormalization()(resnet)
+    resnet = AveragePooling2D((9,9), name = "avg_pool")(resnet)
+    resnet = Flatten()(resnet)
+    #resnet = GlobalAveragePooling2D()(resnet)
+    #local_input = img_input
+    partial_model = Model(img_input, resnet)
+    LOG.info("Partial_model_summary:")
+    partial_model.summary()
+    #dense = Dense(512, name="fc1")(resnet)
+    #dense = BatchNormalization(name = "bn_fc1")(dense)
+    #dense = Activation(relu_type)(dense)
+    #dense = Dropout(DROPOUT_resnet)(dense)
+    dense = Dropout(DROPOUT_resnet)(resnet)
+    dense = Dense(256, activation=relu_type)(dense)
+    dense = Dropout(DROPOUT_resnet)(dense)
+    dense = Dense(128, activation=relu_type)(dense)
+    dense = Dropout(DROPOUT_resnet)(dense)
+    #dense = Dense(64, activation=relu_type)(dense)
+    #dense = Dropout(DROPOUT_resnet)(dense)
+    output = Dense(1, activation="sigmoid", name="predictions",
               kernel_regularizer=l2(L2R),
               bias_regularizer=l2(L2R))(dense)
-	"""
+    """
     fcnn = Conv2D(32, kernel_size=(3, 3), activation=relu_type)(
         BatchNormalization()(input_1))
     fcnn = MaxPooling2D((3, 3))(fcnn)
@@ -236,13 +236,14 @@ def get_model_notebook(lr, decay, channels, relu_type='relu'):
     # For some reason i've decided not to normalize angle data
     output = Dense(1, activation="sigmoid")(dense)
     """
-	model = Model(img_input, output)
-	LOG.info("model summary:")
-	model.summary()
-	#model = Model(local_input, output)
-	optimizer = Adam(lr=lr, decay=decay)
-	model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
-	return model, partial_model
+    model = Model(img_input, output)
+    LOG.info("model summary:")
+    model.summary()
+    #model = Model(local_input, output)
+    #optimizer = Adam(lr=lr, decay=decay)
+    optimizer = SGD(lr=lr, momentum=0.9, nesterov=True)
+    model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
+    return model, partial_model
 
 
 def combined_model(m_b, m_img, lr, decay):
@@ -269,7 +270,8 @@ def combined_model(m_b, m_img, lr, decay):
     common = Dropout(DROPOUT_combined)(common)
     output = Dense(1, activation="sigmoid")(common)
     model = Model([input_b, input_img], output)
-    optimizer = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=decay)
+    #optimizer = Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=decay)
+    optimizer = SGD(lr=lr, momentum=0.9, nesterov=True)
     model.compile(loss="binary_crossentropy", optimizer=optimizer, metrics=["accuracy"])
     return model
 
@@ -297,8 +299,11 @@ def gen_flow_multi_inputs(I1, I2, y, batch_size):
         np.testing.assert_array_equal(I2i[0], I1i[0])
         yield [I1i[0], I2i[1]], I1i[1]
 
-def train_model(model, batch_size, epochs, checkpoint_name, X_train, y_train, val_data, verbose=2):
+def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train, val_data, verbose=2):
     callbacks = [ModelCheckpoint(checkpoint_name, save_best_only=True, monitor='val_loss')]
+    callbacks.append(
+        LearningRateScheduler(lambda epoch: max(1e-4, lr * (0.85 ** (epoch // 5))))
+    )
     datagen = ImageDataGenerator(horizontal_flip=True,
                                    vertical_flip=True,
                                    width_shift_range=0.,
@@ -324,7 +329,7 @@ def train_model(model, batch_size, epochs, checkpoint_name, X_train, y_train, va
 def gen_model_weights(lr, decay, channels, relu, batch_size, epochs, path_name, data, verbose=2):
     X_train, y_train, X_test, y_test, X_val, y_val = data
     model, partial_model = get_model_notebook(lr, decay, channels, relu)
-    model = train_model(model, batch_size, epochs, path_name,
+    model = train_model(model, lr, batch_size, epochs, path_name,
                            X_train, y_train, (X_test, y_test), verbose=verbose)
 
     if verbose > 0:
@@ -376,7 +381,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
                                                        data_images, verbose=verbose)
 
     if train_total:
-        common_model = combined_model(model_b_cut, model_images_cut, lr/3, 1e-7)
+        common_model = combined_model(model_b_cut, model_images_cut, lr/4, 1e-7)
         common_x_train = [X_b_full, X_images_full]
         common_y_train = y_train_full
         common_x_val = [X_b_val, X_images_val]
@@ -390,6 +395,10 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         if verbose > 0:
             print('Training common network')
         callbacks = [ModelCheckpoint(model_common_outpath, save_best_only=True, monitor='val_loss')]
+        callbacks.append(
+            LearningRateScheduler(lambda epoch: max(1e-5, lr/4 * (0.85 ** (epoch // 5))))
+
+        )
         try:
             common_model.fit_generator(gen_flow_multi_inputs(X_b_full, X_images_full, y_train_full, batch_size),
                                          epochs=max_epoch,
@@ -454,7 +463,7 @@ def main():
     y_train, X_b, X_images = create_dataset(args.data, True)
     # baseline parameters
     #common_model = train_models(args,(y_train, X_b, X_images), 7e-04, args.batch_size, 50, 1, return_model=True)
-    common_model = train_models(args,(y_train, X_b, X_images), 3e-4, args.batch_size, 100, 1, return_model=True)
+    common_model = train_models(args,(y_train, X_b, X_images), 5e-03, args.batch_size, 100, 1, return_model=True)
 
     LOG.info("Done :)")
 
