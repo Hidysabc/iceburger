@@ -77,6 +77,7 @@ def color_composite(data):
         band_1 = np.array(row['band_1']).reshape(75, 75)
         band_2 = np.array(row['band_2']).reshape(75, 75)
         band_3 = band_1 / band_2
+        #band_3 = (band_1 + band_2) / 2
 
         r = (band_1 + abs(band_1.min())) / np.max((band_1 + abs(band_1.min())))
         g = (band_2 + abs(band_2.min())) / np.max((band_2 + abs(band_2.min())))

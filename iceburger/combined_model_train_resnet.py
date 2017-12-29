@@ -14,6 +14,7 @@ from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           Dense, Dropout, Flatten, GlobalAveragePooling2D,
                           AveragePooling2D, GlobalMaxPooling2D, MaxPooling2D, Permute,
                           Reshape)
+from keras.constraints import non_neg
 from keras.layers.merge import Concatenate
 from keras.models import Model, load_model
 from keras.optimizers import RMSprop, SGD, Adam
@@ -34,14 +35,15 @@ LOG.setLevel(logging.DEBUG)
 train_all = True
 # These are train flags that required to train model more efficiently and
 # select proper model parameters
-train_b = True or train_all
-train_img = True or train_all
-train_total = True or train_all
+train_common = False
+train_b = False or train_all
+train_img = False or train_all
+train_total = False or train_all
 predict_submission = True and train_all
 
 clean_all = True
 clean_b = False or clean_all
-clean_img = False or clean_all
+clean_img = True or clean_all
 
 load_all = True
 load_b = False or load_all
@@ -55,8 +57,8 @@ weight_gray=0.05
 DROPOUT_fcnn=0.2
 DROPOUT_combined=0.3
 """
-DROPOUT_resnet=0.4
-DROPOUT_combined=0.5
+DROPOUT_resnet=0.3
+DROPOUT_combined=0.4
 
 #: Regularization
 L2R = 5E-3
@@ -180,34 +182,34 @@ def get_model_notebook(lr, decay, channels, relu_type='relu'):
     resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='b')
     resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='c')
     #resnet= Dropout(DROPOUT_resnet)(resnet)
+    """
     resnet = conv_block(resnet, 3, [128, 128, 512], stage=3, block='a')
     resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='b')
     resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='c')
     resnet = identity_block(resnet, 3, [128, 128, 512], stage=3, block='d')
+    """
     #resnet = MaxPooling2D((2, 2), strides=(2, 2))(resnet)
     #resnet = Dropout(DROPOUT_resnet)(resnet)
     #resnet = BatchNormalization()(resnet)
-    resnet = AveragePooling2D((9,9), name = "avg_pool")(resnet)
-    resnet = Flatten()(resnet)
-    #resnet = GlobalAveragePooling2D()(resnet)
+    #resnet = AveragePooling2D((9,9), name = "avg_pool")(resnet)
+    #resnet = Flatten()(resnet)
+    resnet = GlobalMaxPooling2D()(resnet)
     #local_input = img_input
     partial_model = Model(img_input, resnet)
     LOG.info("Partial_model_summary:")
     partial_model.summary()
-    #dense = Dense(512, name="fc1")(resnet)
-    #dense = BatchNormalization(name = "bn_fc1")(dense)
-    #dense = Activation(relu_type)(dense)
+    dense = Dense(512, name="fc1")(resnet)
+    dense = BatchNormalization(name = "bn_fc1")(dense)
+    dense = Activation(relu_type)(dense)
+    dense = Dropout(DROPOUT_resnet)(dense)
     #dense = Dropout(DROPOUT_resnet)(dense)
-    dense = Dropout(DROPOUT_resnet)(resnet)
     dense = Dense(256, activation=relu_type)(dense)
     dense = Dropout(DROPOUT_resnet)(dense)
     dense = Dense(128, activation=relu_type)(dense)
     dense = Dropout(DROPOUT_resnet)(dense)
     #dense = Dense(64, activation=relu_type)(dense)
     #dense = Dropout(DROPOUT_resnet)(dense)
-    output = Dense(1, activation="sigmoid", name="predictions",
-              kernel_regularizer=l2(L2R),
-              bias_regularizer=l2(L2R))(dense)
+    output = Dense(1, activation="sigmoid", name="predictions")(dense)
     """
     fcnn = Conv2D(32, kernel_size=(3, 3), activation=relu_type)(
         BatchNormalization()(input_1))
@@ -298,11 +300,12 @@ def gen_flow_multi_inputs(I1, I2, y, batch_size):
         #print I1i[0].shape
         np.testing.assert_array_equal(I2i[0], I1i[0])
         yield [I1i[0], I2i[1]], I1i[1]
-
+"""
+#Train a particular model
 def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train, val_data, verbose=2):
     callbacks = [ModelCheckpoint(checkpoint_name, save_best_only=True, monitor='val_loss')]
     callbacks.append(
-        LearningRateScheduler(lambda epoch: max(1e-4, lr * (0.85 ** (epoch // 5))))
+        LearningRateScheduler(lambda epoch: max(1e-5, lr * (0.75 ** (epoch // 5))))
     )
     datagen = ImageDataGenerator(horizontal_flip=True,
                                    vertical_flip=True,
@@ -324,8 +327,42 @@ def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train
         print('Loading model')
     model.load_weights(filepath=checkpoint_name)
     return model
+"""
+
 
 #Train a particular model
+def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train, val_data, verbose=2):
+    if train_common:
+        if verbose > 0:
+            print('Loading model weights from: {}'.format(checkpoint_name))
+        model.load_weights(checkpoint_name)
+        return model
+    else:
+        callbacks = [ModelCheckpoint(checkpoint_name, save_best_only=True, monitor='val_loss')]
+        callbacks.append(
+            LearningRateScheduler(lambda epoch: max(1e-4, lr * (0.75 ** (epoch // 5))))
+        )
+        datagen = ImageDataGenerator(horizontal_flip=True,
+                                       vertical_flip=True,
+                                       width_shift_range=0.,
+                                       height_shift_range=0.,
+                                       channel_shift_range=0,
+                                       zoom_range=0.2,
+                                       rotation_range=10)
+        x_test, y_test = val_data
+        try:
+            model.fit_generator(datagen.flow(X_train, y_train, batch_size=batch_size, shuffle=True), epochs=epochs,
+                                        steps_per_epoch=len(X_train) / batch_size,
+                                        validation_data=(x_test, y_test), verbose=1,
+                                        callbacks=callbacks)
+        except KeyboardInterrupt:
+            if verbose > 0:
+                print('Interrupted')
+        if verbose > 0:
+            print('Loading model')
+        model.load_weights(filepath=checkpoint_name)
+    return model
+
 def gen_model_weights(lr, decay, channels, relu, batch_size, epochs, path_name, data, verbose=2):
     X_train, y_train, X_test, y_test, X_val, y_val = data
     model, partial_model = get_model_notebook(lr, decay, channels, relu)
@@ -354,7 +391,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
     X_b_train, X_b_test, \
     X_images_train, X_images_test = train_test_split(y_train_full, X_b_full, X_images_full, random_state=576, train_size=0.85)
 
-    if train_b:
+    if train_b or train_common:
         if verbose > 0:
             print('Training bandwidth network')
         data_b1 = (X_b_train, y_train_train, X_b_test, y_test, X_b_val, y_val)
@@ -367,7 +404,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         model_b, model_b_cut = gen_model_weights(lr, 1e-6, 3, 'relu', batch_size, max_epoch, model_b_outpath,
                                                  data=data_b1, verbose=verbose)
 
-    if train_img:
+    if train_img or train_common:
         if verbose > 0:
             print('Training image network')
         data_images = (X_images_train, y_train_train, X_images_test, y_test, X_images_val, y_val)
@@ -380,8 +417,8 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
         model_images, model_images_cut = gen_model_weights(lr, 1e-6, 3, 'relu', batch_size, max_epoch, model_img_outpath,
                                                        data_images, verbose=verbose)
 
-    if train_total:
-        common_model = combined_model(model_b_cut, model_images_cut, lr/4, 1e-7)
+    if train_total or train_common:
+        common_model = combined_model(model_b_cut, model_images_cut, lr/6, 1e-7)
         common_x_train = [X_b_full, X_images_full]
         common_y_train = y_train_full
         common_x_val = [X_b_val, X_images_val]
@@ -396,7 +433,7 @@ def train_models(args,dataset, lr, batch_size, max_epoch, verbose=2, return_mode
             print('Training common network')
         callbacks = [ModelCheckpoint(model_common_outpath, save_best_only=True, monitor='val_loss')]
         callbacks.append(
-            LearningRateScheduler(lambda epoch: max(1e-5, lr/4 * (0.85 ** (epoch // 5))))
+            LearningRateScheduler(lambda epoch: max(1e-4, lr/6 * (0.75 ** (epoch // 5))))
 
         )
         try:
@@ -429,32 +466,11 @@ def main():
         "--model", type=str, metavar="MODEL", default= "combined_model",
         help="Model type for training (Options: combined_model)")
     parser.add_argument(
-        "--model_path", type=str, metavar="MODEL_PATH", default = None,
-        help="Path to previously saved model (*.hdf5)")
-    parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
     parser.add_argument(
-        "--epochs", type=int, metavar="EPOCHS", default=1000,
+        "--epochs", type=int, metavar="EPOCHS", default=100,
         help="Number of epochs")
-    parser.add_argument(
-        "--train_steps", type=int, metavar="TRAIN_STEPS", default=512,
-        help=("Number of mini-batches for each epoch to pass through during"
-              " training"))
-    parser.add_argument(
-        "--valid_steps", type=int, metavar="VALID_STEPS", default=128,
-        help=("Number of mini-batches for each epoch to pass through during"
-              " validation"))
-    parser.add_argument(
-        "--cb_early_stop", type=int, metavar="PATIENCE", default=50,
-        help="Number of epochs for early stop if without improvement")
-    parser.add_argument(
-        "--cb_reduce_lr", type=int, metavar="PLATEAU", default=10,
-        help="Number of epochs to reduce learning rate without improvement")
-    parser.add_argument(
-        "--cb_reduce_lr_factor", type=float, metavar="ALPHA", default=0.5,
-        help=("Factor for reducing learning rate. Only activated when"
-              " `cb_reduce_lr` is set"))
     parser.add_argument(
         "--outpath", type=str, metavar="OUTPATH",
         default="./",
@@ -463,7 +479,7 @@ def main():
     y_train, X_b, X_images = create_dataset(args.data, True)
     # baseline parameters
     #common_model = train_models(args,(y_train, X_b, X_images), 7e-04, args.batch_size, 50, 1, return_model=True)
-    common_model = train_models(args,(y_train, X_b, X_images), 5e-03, args.batch_size, 100, 1, return_model=True)
+    common_model = train_models(args,(y_train, X_b, X_images), 5e-03, args.batch_size, args.epochs, 1, return_model=True)
 
     LOG.info("Done :)")
 
