@@ -26,21 +26,22 @@ setup(name="iceburger",
           "scikit-learn>=0.18.1",
           "h5py>=2.7.0"
       ],
-#     extras_require={"test": ["nose", "nose-parameterized>=0.5", "mock"]},
-#     package_data={"deepsense": ["resources/templates/*",
-#                                 "resources/har_model/*"]},
+      # extras_require={"test": ["nose", "nose-parameterized>=0.5", "mock"]},
+      # package_data={"deepsense": ["resources/templates/*",
+      #                             "resources/har_model/*"]},
       entry_points={
           "console_scripts": [
+              "iceburger-train=iceburger.train:main",
               "iceburger-conv2d-train=iceburger.conv_train:main",
               "iceburger-inception-train-small=iceburger.inception_train:main",
               "iceburger-inception-train=iceburger.inception_imagenet_train:main",
               "iceburger-resnet20-train=iceburger.resnet20_train:main",
               "iceburger-predict=iceburger.predict:main",
-	          "iceburger-predict-copycat=iceburger.predict_copycat:main",
+              "iceburger-predict-copycat=iceburger.predict_copycat:main",
               "iceburger-fconv2d-train=iceburger.fconv_train:main",
               "iceburger-inception-train-aws=iceburger.inception_imagenet_train_aws:main",
               "iceburger-composite-train=iceburger.composite_model:main",
-	          "iceburger-combined-model-train=iceburger.combined_model_train:main",
+              "iceburger-combined-model-train=iceburger.combined_model_train:main",
               "iceburger-combined-model-train-resnet=iceburger.combined_model_train_resnet:main"
            ]
       },

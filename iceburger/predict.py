@@ -3,16 +3,17 @@ from __future__ import division
 import numpy as np
 import logging
 import argparse
+import os
 import pandas as pd
 import sys
 import cv2
-from keras import backend as K
-from keras.models import load_model
+from keras.models import load_model, model_from_json
+from .io import parse_json_data
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-predict'
 
-from iceburger.io import image_normalization
+# from iceburger.io import image_normalization
 logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
 LOG.setLevel(logging.DEBUG)
@@ -28,6 +29,7 @@ submission_csv_path = "./submission.csv"
 batch_size = 32
 """
 
+'''
 def parse_test_json_data(json_filename, percentile=1, padding="zeros"):
     """Parse json data to generate trainable matrices
     :param json_filename: path to input json file
@@ -48,6 +50,8 @@ def parse_test_json_data(json_filename, percentile=1, padding="zeros"):
     X = np.concatenate([image_normalization(x, percentile, padding) for x in _X], axis=0)
     X_angle = df.inc_angle.values
     return (ID, X, X_angle)
+'''
+
 
 def predict(args):
     """Making prediction after training
@@ -55,24 +59,36 @@ def predict(args):
     :param args: arguments as parsed by argparse module
     """
     LOG.info("Loading data from {}".format(args.test))
-    ID, X_test, X_angle_test = parse_test_json_data(args.test,padding=args.padding)
+    ID, X_test, X_angle_test, y, _ = parse_json_data(args.test,padding=args.padding, smooth=args.smooth)
     LOG.info("Loading model from {}".format(args.model_path))
-    model = load_model(args.model_path)
+    model_weight_path = args.model_path
+    model_dir = os.path.dirname(model_weight_path)
+    model_name = os.path.basename(model_weight_path).split("-", 1)[0]
+    model_arch_path = os.path.join(model_dir, "{}-arch.json"
+                                   .format(model_name))
+
+    LOG.info("Load model architechture from {}".format(model_arch_path))
+    with open(model_arch_path, "r") as jsonfile:
+        model = model_from_json(jsonfile.read())
+
+    LOG.info("Load model weights from {}".format(model_weight_path))
+    model.load_weights(model_weight_path)
     LOG.info("Checking Input Shape...")
     model_input_shape = model.input_shape
     LOG.info("Model_shape is {}".format(model_input_shape))
-    if (model_input_shape[1]!=75 or model_input_shape[2]!=75):
+    if (model_input_shape[1] != 75 or model_input_shape[2] != 75):
         w = model_input_shape[1]
         h = model_input_shape[2]
         X_test = np.array([cv2.resize(x, (w, h)) for x in X_test])
+
     LOG.info("Start predicting...")
-    prediction = model.predict(X_test,verbose = 1, batch_size = args.batch_size)
+    prediction = model.predict(X_test, verbose=1, batch_size=args.batch_size)
     submission = pd.DataFrame({"id": ID,
-                           "is_iceberg": prediction.reshape((
-                                        prediction.shape[0]))})
-    #print(submission.head(10))
+                               "is_iceberg": prediction.reshape((
+                                             prediction.shape[0]))})
+    # print(submission.head(10))
     LOG.info("Saving prediction to {}".format(args.submission_csv_path))
-    submission.to_csv(args.submission_csv_path, index =False)
+    submission.to_csv(args.submission_csv_path, index=False)
 
 
 def main():
@@ -85,6 +101,9 @@ def main():
         "--padding", type=str, metavar="PADDING", default="zeros",
         help="Padding arg for parse_test_json_data")
     parser.add_argument(
+        "--smooth", type=bool, metavar="SMOOTH", default=True,
+        help="Whether to perform band smooth on data")
+    parser.add_argument(
         "--batch_size", type=int, metavar="BATCH_SIZE", default=32,
         help="Number of samples in a mini-batch")
     parser.add_argument(
@@ -96,7 +115,7 @@ def main():
         help=("Path to the json file where test data is saved"))
     args = parser.parse_args()
 
-    prediction = predict(args)
+    predict(args)
 
     LOG.info("Done :)")
 

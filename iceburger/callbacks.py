@@ -1,3 +1,7 @@
+"""
+Callback functions for training on aws
+"""
+
 
 from __future__ import absolute_import
 from __future__ import print_function
