@@ -32,11 +32,13 @@ setup(name="iceburger",
       entry_points={
           "console_scripts": [
               "iceburger-train=iceburger.train:main",
+              "iceburger-train-kfold=iceburger.train_kfold:main",
               "iceburger-conv2d-train=iceburger.conv_train:main",
               "iceburger-inception-train-small=iceburger.inception_train:main",
               "iceburger-inception-train=iceburger.inception_imagenet_train:main",
               "iceburger-resnet20-train=iceburger.resnet20_train:main",
               "iceburger-predict=iceburger.predict:main",
+              "iceburger-predict-kfold=iceburger.predict_kfold:main",
               "iceburger-predict-copycat=iceburger.predict_copycat:main",
               "iceburger-fconv2d-train=iceburger.fconv_train:main",
               "iceburger-inception-train-aws=iceburger.inception_imagenet_train_aws:main",

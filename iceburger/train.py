@@ -9,7 +9,8 @@ import os
 import sys
 import shutil
 
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint,\
+                            LearningRateScheduler
 from keras.models import load_model
 from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
@@ -46,6 +47,20 @@ def get_callbacks(args, model_out_path):
             save_weights_only=True
         )
     )
+
+    def cyclic_lr(epoch):
+        if epoch < 50:
+            return 1e-3
+        else:
+            k = epoch % 5
+            if k == 0 or k == 1:
+                return 5e-4
+            elif k == 2 or k == 3:
+                return 1e-4
+            else:
+                return 1e-5
+
+    callbacks.append(LearningRateScheduler(cyclic_lr))
     if args.cb_early_stop:
         # stop training earlier if the model is not improving
         callbacks.append(
@@ -75,13 +90,14 @@ def compile_model(args, input_shape):
     :returns: `keras.models.Model` of compiled model
     """
     lr = args.lr
+    decay = args.lrdecay
     if args.model.lower() == "conv2d_model":
         if args.model_path:
             model = load_model(args.model_path)
         else:
             model = Conv2DModel(include_top=True,
                                 input_shape=input_shape)
-        optimizer = Adam(lr, decay=1e-6)
+        optimizer = Adam(lr, decay=decay)
         # optimizer = SGD(lr = 0.001, momentum = 0.9)
     else:
         LOG.err("Unknown model name: {}".format(args.model))

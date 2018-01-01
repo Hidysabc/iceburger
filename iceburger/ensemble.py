@@ -7,13 +7,15 @@ import copy
 import glob
 from keras.callbacks import ModelCheckpoint
 from keras.models import model_from_json
+from keras.optimizers import SGD
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 
 
 KFOLD_CONF_KEYS = ["n_splits", "n_repeats", "random_state"]
-COMPILE_CONF_KEYS = ["loss", "optimizer", "metrics"]
-FIT_GENERATOR_CONF_KEYS = ["epochs", "steps_per_epoch", "callbacks"]
+OPTIMIZER_CONF_KEYS = ["optimizer_class", "lr", "decay"]
+COMPILE_CONF_KEYS = ["loss", "metrics"]
+FIT_GENERATOR_CONF_KEYS = ["epochs", "callbacks"]
 
 
 class KFoldEnsembleKerasModel(object):
@@ -37,10 +39,6 @@ class KFoldEnsembleKerasModel(object):
                         checkpoint_name="kfold-keras-model",
                         **kwargs):
         split = 0
-        compile_config = {}
-        for conf in COMPILE_CONF_KEYS:
-            if conf in kwargs:
-                compile_config[conf] = kwargs[conf]
 
         fitgen_config = {}
         for conf in FIT_GENERATOR_CONF_KEYS:
@@ -55,6 +53,20 @@ class KFoldEnsembleKerasModel(object):
                                            "checkpoint_path": _checkpoint_name}
             with open(self.model_arch_path, "r") as jsonfile:
                 _model = model_from_json(jsonfile.read())
+
+            optimizer_config = {"optimizer_class": SGD, "lr": 1e-3, "decay": 0}
+            for conf in OPTIMIZER_CONF_KEYS:
+                if conf in kwargs:
+                    optimizer_config[conf] = kwargs[conf]
+
+            compile_config = {}
+            for conf in COMPILE_CONF_KEYS:
+                if conf in kwargs:
+                    compile_config[conf] = kwargs[conf]
+
+            compile_config["optimizer"] = optimizer_config["optimizer_class"](
+                lr=optimizer_config["lr"], decay=optimizer_config["decay"]
+            )
 
             _model.compile(**compile_config)
             X_train = X[idx_train]
@@ -71,6 +83,7 @@ class KFoldEnsembleKerasModel(object):
             history = _model.fit_generator(
                 gen.flow(X_train, y_train, batch_size=batch_size, shuffle=True),
                 validation_data=(X_valid, y_valid),
+                steps_per_epoch=X_train.shape[0] / batch_size,
                 **_fitgen_config)
             _model.load_weights(filepath=_checkpoint_name)
 
@@ -93,11 +106,10 @@ class KFoldEnsembleKerasModel(object):
             self.models[split_name].load_weights(checkpoint_name)
 
     def predict(self, X, merge_function=(lambda x: np.mean(x, axis=1)),
-                output_allfolds=False):
-        y_pred = np.concatenate([self.models[n].predict(X)
+                output_allfolds=False, **kwargs):
+        y_pred = np.concatenate([self.models[n].predict(X, **kwargs)
                                  for n in self.models], axis=1)
         if output_allfolds:
             return y_pred
         else:
             return merge_function(y_pred)
-
