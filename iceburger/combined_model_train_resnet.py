@@ -328,6 +328,17 @@ def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train
     model.load_weights(filepath=checkpoint_name)
     return model
 """
+def cyclic_lr(epoch):
+    initial_lr = 5e-3
+    if epoch <35:
+        lr =  initial_lr * (0.75 ** (epoch//5))
+    elif (epoch%3)==0:
+        lr = 5e-4
+    elif (epoch%3)==1:
+        lr = 5e-5
+    else:
+        lr = 5e-6
+    return lr
 
 
 #Train a particular model
@@ -340,7 +351,8 @@ def train_model(model, lr, batch_size, epochs, checkpoint_name, X_train, y_train
     else:
         callbacks = [ModelCheckpoint(checkpoint_name, save_best_only=True, monitor='val_loss')]
         callbacks.append(
-            LearningRateScheduler(lambda epoch: max(1e-4, lr * (0.75 ** (epoch // 5))))
+            LearningRateScheduler(cyclic_lr)
+            #LearningRateScheduler(lambda epoch: max(1e-4, lr * (0.75 ** (epoch // 5))))
         )
         datagen = ImageDataGenerator(horizontal_flip=True,
                                        vertical_flip=True,
