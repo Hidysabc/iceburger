@@ -1,0 +1,103 @@
+"""
+Classes and functions related to ensemble keras models
+"""
+
+
+import copy
+import glob
+from keras.callbacks import ModelCheckpoint
+from keras.models import model_from_json
+import numpy as np
+from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
+
+
+KFOLD_CONF_KEYS = ["n_splits", "n_repeats", "random_state"]
+COMPILE_CONF_KEYS = ["loss", "optimizer", "metrics"]
+FIT_GENERATOR_CONF_KEYS = ["epochs", "steps_per_epoch", "callbacks"]
+
+
+class KFoldEnsembleKerasModel(object):
+    def __init__(self, model_arch_path, **kwargs):
+        self.model_arch_path = model_arch_path
+        splitter_config = {"n_splits": 2, "n_repeats": 1}
+        for conf in KFOLD_CONF_KEYS:
+            if conf in kwargs:
+                splitter_config[conf] = kwargs[conf]
+
+        if splitter_config["n_repeats"] == 1:
+            splitter_config.pop("n_repeats")
+            self.kfold_splitter = StratifiedKFold(**splitter_config)
+        else:
+            self.kfold_splitter = RepeatedStratifiedKFold(**splitter_config)
+
+        self.kfold_info = {}
+        self.models = {}
+
+    def train_generator(self, X, y, gen, batch_size=32,
+                        checkpoint_name="kfold-keras-model",
+                        **kwargs):
+        split = 0
+        compile_config = {}
+        for conf in COMPILE_CONF_KEYS:
+            if conf in kwargs:
+                compile_config[conf] = kwargs[conf]
+
+        fitgen_config = {}
+        for conf in FIT_GENERATOR_CONF_KEYS:
+            if conf in kwargs:
+                fitgen_config[conf] = kwargs[conf]
+
+        for idx_train, idx_valid in self.kfold_splitter.split(X, y):
+            split_name = "{0:03d}".format(split)
+            _checkpoint_name = checkpoint_name + "_{}.hdf5".format(split_name)
+            self.kfold_info[split_name] = {"idx_train": idx_train,
+                                           "idx_valid": idx_valid,
+                                           "checkpoint_path": _checkpoint_name}
+            with open(self.model_arch_path, "r") as jsonfile:
+                _model = model_from_json(jsonfile.read())
+
+            _model.compile(**compile_config)
+            X_train = X[idx_train]
+            y_train = y[idx_train]
+            X_valid = X[idx_valid]
+            y_valid = y[idx_valid]
+            _fitgen_config = copy.copy(fitgen_config)
+            _callbacks = [x for x in _fitgen_config["callbacks"]
+                          if not isinstance(x, ModelCheckpoint)]
+            _callbacks.append(ModelCheckpoint(_checkpoint_name,
+                                              save_best_only=True,
+                                              monitor="val_loss"))
+            _fitgen_config["callbacks"] = _callbacks
+            history = _model.fit_generator(
+                gen.flow(X_train, y_train, batch_size=batch_size, shuffle=True),
+                validation_data=(X_valid, y_valid),
+                **_fitgen_config)
+            _model.load_weights(filepath=_checkpoint_name)
+
+            val_loss = history.history["val_loss"]
+            self.kfold_info[split_name]["history"] = history
+            self.kfold_info[split_name]["best_epoch"] = np.argmin(val_loss)
+            self.kfold_info[split_name]["best_val_loss"] = np.min(val_loss)
+            self.models[split_name] = _model
+            split += 1
+
+        return self.kfold_info
+
+    def load_weights(self, checkpoint_name):
+        checkpoint_paths = glob.glob(checkpoint_name + "*.hdf5")
+        for checkpoint_name in checkpoint_paths:
+            split_name = checkpoint_name.split("_")[-1].replace(".hdf5", "")
+            with open(self.model_arch_path, "r") as jsonfile:
+                self.models[split_name] = model_from_json(jsonfile.read())
+
+            self.models[split_name].load_weights(checkpoint_name)
+
+    def predict(self, X, merge_function=(lambda x: np.mean(x, axis=1)),
+                output_allfolds=False):
+        y_pred = np.concatenate([self.models[n].predict(X)
+                                 for n in self.models], axis=1)
+        if output_allfolds:
+            return y_pred
+        else:
+            return merge_function(y_pred)
+

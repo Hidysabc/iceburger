@@ -6,9 +6,10 @@ import pandas as pd
 
 # An image clearing dependencies
 from skimage.restoration import (denoise_tv_chambolle, denoise_bilateral,
-                                 denoise_tv_bregman, denoise_nl_means)
+                                 denoise_nl_means)
 from skimage.filters import gaussian
 from skimage.color import rgb2gray
+
 
 def image_normalization(x, percentile=1, pad_channel="zeros"):
     """Normalize the image signal value by rescale data
@@ -68,5 +69,23 @@ def smooth(X, sigma):
 
 def grayscale(X):
     return np.asarray([rgb2gray(x) for x in X])
+
+# Translate data to an image format
+def color_composite(data):
+    rgb_arrays = []
+    for i, row in data.iterrows():
+        band_1 = np.array(row['band_1']).reshape(75, 75)
+        band_2 = np.array(row['band_2']).reshape(75, 75)
+        band_3 = band_1 / band_2
+        #band_3 = (band_1 + band_2) / 2
+
+        r = (band_1 + abs(band_1.min())) / np.max((band_1 + abs(band_1.min())))
+        g = (band_2 + abs(band_2.min())) / np.max((band_2 + abs(band_2.min())))
+        b = (band_3 + abs(band_3.min())) / np.max((band_3 + abs(band_3.min())))
+
+        rgb = np.dstack((r, g, b))
+        rgb_arrays.append(rgb)
+    return np.array(rgb_arrays)
+
 
 
