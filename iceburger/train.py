@@ -15,11 +15,13 @@ from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 
 from .conv import Conv2DModel
+from .resnet import ResNetModel
+from .inception import InceptionModel
 from .io import parse_json_data
 
 
 FORMAT = '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
-LOGNAME = 'iceburger-conv2d-train'
+LOGNAME = 'iceburger-train'
 
 logging.basicConfig(format=FORMAT)
 LOG = logging.getLogger(LOGNAME)
@@ -76,16 +78,21 @@ def compile_model(args, input_shape):
     """
     lr = args.lr
     if args.model.lower() == "conv2d_model":
-        if args.model_path:
-            model = load_model(args.model_path)
-        else:
-            model = Conv2DModel(include_top=True,
-                                input_shape=input_shape)
-        optimizer = Adam(lr, decay=1e-6)
-        # optimizer = SGD(lr = 0.001, momentum = 0.9)
+        model = Conv2DModel(include_top=True,
+                            input_shape=input_shape)
+    elif args.model.lower() == "resnet_model":
+        model = ResNetModel(include_top=True,
+                            input_shape=input_shape,
+                            stage=2)
+    elif args.model.lower() == "inception_model":
+        model = InceptionModel(include_top=True,
+                               input_shape=True,
+                               mixed=2)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
+    # optimizer = SGD(lr = 0.001, momentum = 0.9)
+    optimizer = Adam(lr, decay=1e-6)
     model.compile(optimizer=optimizer,
                   loss='binary_crossentropy',
                   metrics=['accuracy'])
@@ -210,7 +217,7 @@ def main():
         help="Whether to perform band smooth on data")
     parser.add_argument(
         "--model", type=str, metavar="MODEL", default="conv2d_model",
-        help="Model type for training (Options: conv2d_model)")
+        help="Model type for training (Options: conv2d_model, resnet_model, inception_model)")
     parser.add_argument(
         "--model_path", type=str, metavar="MODEL_PATH", default=None,
         help="Path to previously saved model (*.hdf5)")
