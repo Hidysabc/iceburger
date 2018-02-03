@@ -1,7 +1,7 @@
 from __future__ import print_function
 from __future__ import division
 from keras import backend as K
-# from keras import layers
+from keras import layers
 # from keras.layers.core import Lambda
 from keras.layers.merge import Concatenate
 from keras.utils import layer_utils
@@ -10,7 +10,7 @@ from keras.layers import (Input, Activation, BatchNormalization,
                           Conv2D, Dense, Dropout, Flatten,
                           GlobalAveragePooling2D,
                           AveragePooling2D,
-                          GlobalMaxPooling2D, MaxPooling2D)
+                          GlobalMaxPooling2D, MaxPooling2D, concatenate)
 from keras.models import Model, load_model
 from keras.regularizers import l2
 
@@ -69,6 +69,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block):
     x = Activation('relu')(x)
     return x
 
+
 def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2)):
     """A block that has a conv layer at shortcut.
     # Arguments
@@ -95,7 +96,7 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
     x = Conv2D(filters1, (1, 1), strides=strides,
-              name=conv_name_base + '2a')(input_tensor)
+               name=conv_name_base + '2a')(input_tensor)
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
     x = Conv2D(filters2, kernel_size, padding='same',
@@ -106,12 +107,14 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2))
     x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
     shortcut = Conv2D(filters3, (1, 1), strides=strides,
                       name=conv_name_base + '1')(input_tensor)
-    shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+    shortcut = BatchNormalization(
+        axis=bn_axis, name=bn_name_base + '1')(shortcut)
     x = layers.add([x, shortcut])
     x = Activation('relu')(x)
     return x
 
-def ResNetModel(include_top=True, weights=None, input_tensor=None,
+
+def ResNet(include_top=True, weights=None, input_tensor=None,
            input_shape=None, pooling=None, classes=1, stage=2):
     """Instantiates the ResNet architecture.
     Optionally loads weights pre-trained
@@ -156,7 +159,6 @@ def ResNetModel(include_top=True, weights=None, input_tensor=None,
     :raises: ValueError: in case of invalid argument for
         `weights`, or invalid input shape.
     """
-
     if input_tensor is None:
         image_input = Input(shape=input_shape)
     else:
@@ -175,7 +177,8 @@ def ResNetModel(include_top=True, weights=None, input_tensor=None,
     resnet = Activation('relu')(resnet)
     resnet = MaxPooling2D((3, 3), strides=(2, 2))(resnet)
     if stage > 1:
-        resnet = conv_block(resnet, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1))
+        resnet = conv_block(resnet, 3, [64, 64, 256], stage=2, block='a',
+                            strides=(1, 1))
         resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='b')
         resnet = identity_block(resnet, 3, [64, 64, 256], stage=2, block='c')
     if stage > 2:
@@ -197,7 +200,13 @@ def ResNetModel(include_top=True, weights=None, input_tensor=None,
     if include_top:
         resnet = GlobalAveragePooling2D()(resnet)
         # x = GlobalMaxPooling2D()(x)
-        dense = Dense(512, name="fc_1")(resnet)
+
+        input_2 = Input(shape=[1], name="angle")
+        angle_layer = Dense(1, )(input_2)
+        merge = concatenate([resnet, angle_layer])
+        dense = Dense(512, name="fc_1")(merge)
+
+        # dense = Dense(512, name="fc_1")(resnet)
         dense = BatchNormalization(name = "bn_fc1")(dense)
         dense = Activation("relu")(dense)
         dense = Dropout(DROPOUT)(dense)
@@ -220,10 +229,9 @@ def ResNetModel(include_top=True, weights=None, input_tensor=None,
     else:
         inputs = image_input
     # Create imodel.
-    model = Model(input=inputs, output=output, name="resnet")
+    # model = Model(inputs=inputs, output=output, name="resnet")
+    model = Model(inputs=[inputs,input_2], output=output, name="resnet")
     # print(model.summary())
     if weights:
         model.load_weights(weights)
     return model
-
-

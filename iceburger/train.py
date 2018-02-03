@@ -16,9 +16,12 @@ from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 
 from .conv import Conv2DModel
-from .resnet import ResNetModel
-from .inception import InceptionModel
+from .resnet import ResNet
+from .inception import Inception
 from .io import parse_json_data
+from .filters import sobel_filter, scharr_filter, prewitt_filter,\
+                roberts_filter, frangi_filter, hessian_filter, laplace_filter,\
+                gabor_filter
 
 
 FORMAT = '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
@@ -49,19 +52,34 @@ def get_callbacks(args, model_out_path):
             save_weights_only=True
         )
     )
-
+    """
     def cyclic_lr(epoch):
-        if epoch < 50:
+        if epoch < 20:
             return 1e-3
         else:
-            k = epoch % 5
+            k = epoch % 8
             if k == 0 or k == 1:
                 return 5e-4
             elif k == 2 or k == 3:
                 return 1e-4
-            else:
+            elif k == 4 or k == 5:
+                return 5e-5
+            elif k == 6:
                 return 1e-5
-
+            elif k == 7:
+                return 5e-6
+    """
+    def cyclic_lr(epoch):
+        if epoch < 20:
+            return 1e-3
+        else:
+            k = epoch % 5
+            if k == 0 or k == 1:
+                return 1e-4
+            elif k == 2 or k == 3:
+                return 1e-5
+            else:
+                return 1e-6
     callbacks.append(LearningRateScheduler(cyclic_lr))
     if args.cb_early_stop:
         # stop training earlier if the model is not improving
@@ -97,13 +115,13 @@ def compile_model(args, input_shape):
         model = Conv2DModel(include_top=True,
                             input_shape=input_shape)
     elif args.model.lower() == "resnet":
-        model = ResNetModel(include_top=True,
-                            input_shape=input_shape,
-                            stage=2)
+        model = ResNet(include_top=True,
+                       input_shape=input_shape,
+                       stage=2)
     elif args.model.lower() == "inception":
-        model = InceptionModel(include_top=True,
-                               input_shape=True,
-                               mixed=2)
+        model = Inception(include_top=True,
+                          input_shape=input_shape,
+                          mixed=2)
     else:
         LOG.err("Unknown model name: {}".format(args.model))
 
@@ -123,7 +141,10 @@ def train(args):
     LOG.info("Loading data from {}".format(args.data))
     ID, X, X_angle, y, subset = parse_json_data(os.path.join(args.data),
                                                 padding=args.padding,
-                                                smooth=args.smooth)
+                                                smooth=args.smooth,
+                                                filter_instance=gabor_filter,
+                                                frequency=0.6, theta=np.pi*90/180,
+                                                mode="nearest")
     X_train = X[subset == 'train']
     X_angle_train = X_angle[subset == 'train']
     y_train = y[subset == 'train']
@@ -132,7 +153,7 @@ def train(args):
     y_valid = y[subset == 'valid']
 
     LOG.info("Initiate model")
-    model = compile_model(args, input_shape=(75, 75, 3))
+    model = compile_model(args, input_shape=(75, 75, 14))
     LOG.info("Save model structure")
     model_arch_name = "{mn}-arch.json".format(mn=args.model)
     with open(os.path.join(args.outpath, model_arch_name), "w") as fo:
@@ -145,7 +166,7 @@ def train(args):
                                    height_shift_range=0.,
                                    channel_shift_range=0.,
                                    zoom_range=0.2,
-                                   rotation_range=10)
+                                   rotation_range=15)
 
     # gen_valid = ImageDataGenerator(horizontal_flip=True,
     #                                vertical_flip=True,
@@ -157,18 +178,20 @@ def train(args):
     # We use the exact same generator with the same random seed for both the y
     # and angle arrays
 
-    def gen_flow_for_one_input(X1, y):
+    def gen_flow_for_two_input(X1, X2, y):
         genX1 = gen_train.flow(X1, y, batch_size=args.batch_size, seed=666)
+        genX2 = gen_train.flow(X1, X2, batch_size=args.batch_size, seed=666)
         while True:
             X1i = genX1.next()
-            yield X1i[0], X1i[1]
+            X2i = genX2.next()
+            yield [X1i[0], X2i[1]], X1i[1]
 
     # Finally create out generator
-    gen_train_ = gen_train.flow(X_train, y_train, batch_size=args.batch_size,
-                                seed=666)
+    # gen_train_ = gen_train.flow(X_train, y_train, batch_size=args.batch_size,
+    #                            seed=666)
     # gen_valid_ = gen_valid.flow(X_valid, y_valid, batch_size=args.batch_size,
     #                             seed=666)
-    # gen_train_ = gen_flow_train_for_one_input(X_train, y_train)
+    gen_train_ = gen_flow_for_two_input(X_train, X_angle_train, y_train)
     # gen_valid_ = gen_flow_valid_for_one_input(X_valid, y_valid)
 
     LOG.info("Create callback functions")
@@ -182,7 +205,7 @@ def train(args):
         gen_train_,
         steps_per_epoch=X_train.shape[0] / args.batch_size,
         epochs=args.epochs, verbose=1,
-        validation_data=(X_valid, y_valid),
+        validation_data=([X_valid, X_angle_valid], y_valid),
         callbacks=callbacks)
 
     best_idx = np.argmin(history.history['val_loss'])
@@ -233,7 +256,7 @@ def main():
         help="Whether to perform band smooth on data")
     parser.add_argument(
         "--model", type=str, metavar="MODEL", default="conv2d_model",
-        help="Model type for training (Options: conv2d_model, resnet_model, inception_model)")
+        help="Model type for training (Options: conv2d_model, resnet, inception)")
     parser.add_argument(
         "--model_path", type=str, metavar="MODEL_PATH", default=None,
         help="Path to previously saved model (*.hdf5)")
@@ -247,7 +270,7 @@ def main():
         "--lrdecay", type=int, metavar="LR_DECAY", default=1e-6,
         help="learning rate decay")
     parser.add_argument(
-        "--epochs", type=int, metavar="EPOCHS", default=100,
+        "--epochs", type=int, metavar="EPOCHS", default=500,
         help="Number of epochs")
     parser.add_argument(
         "--cb_early_stop", type=int, metavar="PATIENCE", default=50,

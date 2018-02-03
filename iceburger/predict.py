@@ -9,6 +9,8 @@ import sys
 import cv2
 from keras.models import load_model, model_from_json
 from .io import parse_json_data
+from .filters import sobel_filter, scharr_filter, prewitt_filter,\
+    roberts_filter, frangi_filter, hessian_filter, gabor_filter
 
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-predict'
@@ -59,7 +61,9 @@ def predict(args):
     :param args: arguments as parsed by argparse module
     """
     LOG.info("Loading data from {}".format(args.test))
-    ID, X_test, X_angle_test, y, _ = parse_json_data(args.test,padding=args.padding, smooth=args.smooth)
+    ID, X_test, X_angle_test, y, _ = parse_json_data(args.test,padding=args.padding,
+                                                     smooth=args.smooth, filter_instance=gabor_filter,
+                                                     frequency=0.6, theta=np.pi*90/180, mode="nearest")
     LOG.info("Loading model from {}".format(args.model_path))
     model_weight_path = args.model_path
     model_dir = os.path.dirname(model_weight_path)
@@ -76,13 +80,15 @@ def predict(args):
     LOG.info("Checking Input Shape...")
     model_input_shape = model.input_shape
     LOG.info("Model_shape is {}".format(model_input_shape))
+    """
     if (model_input_shape[1] != 75 or model_input_shape[2] != 75):
         w = model_input_shape[1]
         h = model_input_shape[2]
         X_test = np.array([cv2.resize(x, (w, h)) for x in X_test])
-
+    """
     LOG.info("Start predicting...")
-    prediction = model.predict(X_test, verbose=1, batch_size=args.batch_size)
+    # prediction = model.predict(X_test, verbose=1, batch_size=args.batch_size)
+    prediction = model.predict([X_test, X_angle_test], verbose=1, batch_size=args.batch_size)
     submission = pd.DataFrame({"id": ID,
                                "is_iceberg": prediction.reshape((
                                              prediction.shape[0]))})

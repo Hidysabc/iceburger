@@ -10,7 +10,7 @@ import cv2
 from keras.models import load_model, model_from_json
 from .io import parse_json_data
 from .ensemble import KFoldEnsembleKerasModel
-
+from .filters import gabor_filter, sobel_filter
 FORMAT =  '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-predict'
 
@@ -35,9 +35,16 @@ def predict(args):
     model.load_weights(os.path.join(model_dir, model_name))
 
     LOG.info("Loading data from {}".format(args.test))
+    ID, X_test, X_angle_test, y, _ = parse_json_data(args.test,
+                                                padding=args.padding,
+                                                smooth=args.smooth,
+                                                filter_instance=gabor_filter,
+                                                frequency=0.6, theta=np.pi*90/180,
+                                                mode="nearest")
+    """
     ID, X_test, X_angle_test, y, _ = parse_json_data(
         args.test, padding=args.padding, smooth=args.smooth)
-
+    """
     LOG.info("Start predicting...")
     prediction = model.predict(X_test, verbose=1, batch_size=args.batch_size)
     submission = pd.DataFrame({"id": ID,

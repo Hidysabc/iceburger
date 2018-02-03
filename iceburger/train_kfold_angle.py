@@ -11,13 +11,13 @@ import sys
 from keras.optimizers import RMSprop, SGD, Adam
 from keras.preprocessing.image import ImageDataGenerator
 
-from .conv import Conv2DModel
-from .resnet import ResNet
-from .inception import Inception
-from .ensemble import KFoldEnsembleKerasModel
-from .io import parse_json_data
-from .train import get_callbacks
-from .filters import gabor_filter, sobel_filter
+from iceburger.conv import Conv2DModel
+from iceburger.resnet import ResNet
+from iceburger.inception import Inception
+from iceburger.ensemble_angle import KFoldEnsembleKerasModel
+from iceburger.io import parse_json_data
+from iceburger.train import get_callbacks
+from iceburger.filters import gabor_filter, sobel_filter
 
 FORMAT = '%(asctime)-15s %(name)-8s %(levelname)s %(message)s'
 LOGNAME = 'iceburger-kfold-train'
@@ -68,7 +68,7 @@ def train_kfold(args):
                                    height_shift_range=0.,
                                    channel_shift_range=0.,
                                    zoom_range=0.2,
-                                   rotation_range=10)
+                                   rotation_range=15)
     """
     def gen_flow_for_two_input(X1, X2, y):
         genX1 = gen_train.flow(X1, y, batch_size=args.batch_size, seed=666)
@@ -78,7 +78,7 @@ def train_kfold(args):
             X2i = genX2.next()
             yield [X1i[0], X2i[1]], X1i[1]
 
-    gen_train_ = gen_flow_for_two_input(X_train, X_angle_train, y_train)
+    gen_train_ = gen_flow_for_two_input(X, X_angle, y)
     """
     LOG.info("Create callback functions")
     model_out_path = args.outpath
@@ -99,7 +99,7 @@ def train_kfold(args):
     lr = args.lr
     decay = args.lrdecay
     kfold_info = model.train_generator(
-        X, y, gen_train, batch_size=args.batch_size,
+        X, X_angle, y, gen_train, batch_size=args.batch_size,
         checkpoint_name=checkpoint_name,
         epochs=args.epochs,
         callbacks=callbacks, loss="binary_crossentropy",

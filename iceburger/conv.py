@@ -3,7 +3,8 @@ from __future__ import division
 from keras import backend as K
 from keras.engine.topology import get_source_inputs
 from keras.layers import (Input, BatchNormalization, Conv2D,
-                          Dense, Dropout, Flatten, MaxPooling2D)
+                          Dense, Dropout, Flatten, MaxPooling2D,
+                          GlobalMaxPooling2D, GlobalAveragePooling2D, concatenate)
 from keras.models import Model
 
 
@@ -52,7 +53,7 @@ def Conv2DModel(include_top=True, weights=None, input_tensor=None,
         else:
             image_input = input_tensor
 
-    fcnn = Conv2D(32, kernel_size=(3, 3), activation="relu")(
+    fcnn = Conv2D(64, kernel_size=(3, 3), activation="relu")(
         BatchNormalization()(image_input))
     fcnn = MaxPooling2D((3, 3))(fcnn)
     fcnn = Dropout(DROPOUT_fcnn)(fcnn)
@@ -67,14 +68,21 @@ def Conv2DModel(include_top=True, weights=None, input_tensor=None,
     fcnn = Dropout(DROPOUT_fcnn)(fcnn)
     fcnn = BatchNormalization()(fcnn)
     fcnn = Flatten(name="flatten")(fcnn)
+    #fcnn = GlobalMaxPooling2D(name="globalmaxpool")(fcnn)
     # local_input = image_input
     # partial_model = Model(image_input, fcnn)
-    dense = Dropout(DROPOUT_fcnn)(fcnn)
-    dense = Dense(256, activation="relu")(dense)
+    # add merge angle layer
+    input_2 = Input(shape=[1], name="angle")
+    angle_layer = Dense(1, )(input_2)
+    merge = concatenate([fcnn, angle_layer])
+    # dense = Dropout(DROPOUT_fcnn)(fcnn)
+    # dense = Dense(512, activation="relu")(merge)
+    # dense = Dropout(DROPOUT_fcnn)(dense)
+    dense = Dense(128, activation="relu")(merge)
     dense = Dropout(DROPOUT_fcnn)(dense)
     dense = Dense(128, activation="relu")(dense)
     dense = Dropout(DROPOUT_fcnn)(dense)
-    dense = Dense(64, activation="relu")(dense)
+    dense = Dense(128, activation="relu")(dense)
     dense = Dropout(DROPOUT_fcnn)(dense)
     # For some reason i've decided not to normalize angle data
     output = Dense(1, activation="sigmoid")(dense)
@@ -86,7 +94,7 @@ def Conv2DModel(include_top=True, weights=None, input_tensor=None,
     else:
         inputs = image_input
 
-    model = Model(inputs, output)
+    model = Model([inputs, input_2], output)
     # Create model.
     if weights:
         model.load_weights(weights)

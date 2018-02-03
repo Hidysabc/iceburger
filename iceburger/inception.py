@@ -5,7 +5,7 @@ from keras import layers
 from keras.engine.topology import get_source_inputs
 from keras.layers import (Input, Activation, BatchNormalization, Conv2D,
                           Dense, Dropout, Flatten, AveragePooling2D,
-                          GlobalAveragePooling2D,
+                          GlobalAveragePooling2D, concatenate,
                           GlobalMaxPooling2D, MaxPooling2D)
 from keras.models import Model, load_model
 from keras.regularizers import l2
@@ -26,10 +26,12 @@ NUM_DENSE = 512
 
 #: Dropout ratio
 DROPOUT = 0.5
+DROPOUT_merge = 0.2
 
 #: Regularization
 L1L2R = 1E-3
 L2R = 5E-3
+
 
 def conv2d_bn(x, filters, num_row, num_col, padding='same',
               strides=(1,1), name=None):
@@ -67,9 +69,10 @@ def conv2d_bn(x, filters, num_row, num_col, padding='same',
     x = Activation('relu', name=name)(x)
     return x
 
-def InceptionModel(include_top=True, weights=None,
-                   input_tensor=None, input_shape=None,
-                   pooling=None, classes=1, mixed=2):
+
+def Inception(include_top=True, weights=None,
+              input_tensor=None, input_shape=None,
+              pooling=None, classes=1, mixed=2):
     """Instantiates the Inception v3 architecture.
     Optionally loads weights pre-trained
     on ImageNet. Note that when using TensorFlow,
@@ -298,11 +301,25 @@ def InceptionModel(include_top=True, weights=None,
             branch_pool = conv2d_bn(branch_pool, 192, 1, 1)
             inception = layers.concatenate(
                 [branch1x1, branch3x3, branch3x3dbl, branch_pool],
-                axis=channel_axis, name='mixed' + str(9 + i)
+                axis=channel_axis, name='mixed' + str(9 + i))
     if include_top:
         # Classification block
         inception = GlobalAveragePooling2D(name='avg_pool')(inception)
-        output = Dense(classes, activation="sigmoid", name="predictions")(inception)
+        input_2 = Input(shape=[1], name="angle")
+        angle_layer = Dense(1, )(input_2)
+        merge = concatenate([inception, angle_layer])
+        dense = Dense(128, activation="relu")(merge)
+        # dense = Dense(128, activation="relu")(inception)
+        dense = Dropout(DROPOUT_merge)(dense)
+
+        dense = Dense(128, activation="relu")(dense)
+        dense = Dropout(DROPOUT_merge)(dense)
+        dense = Dense(128, activation="relu")(dense)
+        dense = Dropout(DROPOUT_merge)(dense)
+
+        output = Dense(classes, activation="sigmoid", name="predictions")(dense)
+
+        # output = Dense(classes, activation="sigmoid", name="predictions")(inception)
     else:
         if pooling == 'avg':
             output = GlobalAveragePooling2D()(inception)
@@ -316,10 +333,10 @@ def InceptionModel(include_top=True, weights=None,
     else:
         inputs = image_input
     # Create model.
-    model = Model(inputs, output, name='inception_v3')
+    # model = Model(inputs, output, name='inception_v3')
+    model = Model([inputs, input_2], output, name='inception_v3')
     # load weights
     if weights:
         model.load_weights(weights)
 
     return model
-
